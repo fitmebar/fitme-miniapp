@@ -319,7 +319,32 @@ input {
 
     <div id="cartItems"></div>
 
-    <div class="cart-summary">
+    
+<div id="pickupBlock" style="margin-top:22px;">
+  <div style="font-size:18px;font-weight:800;margin-bottom:12px;">
+    Где заберёте заказ?
+  </div>
+
+  <label class="option">
+    <span class="option-left">
+      <input type="radio" name="pickup" value="Со стороны зала">
+      🏋️ Со стороны зала
+    </span>
+  </label>
+
+  <label class="option">
+    <span class="option-left">
+      <input type="radio" name="pickup" value="Со стороны ресепшена">
+      🛎️ Со стороны ресепшена
+    </span>
+  </label>
+
+  <div style="margin-top:16px;padding:14px;background:#f5f6f5;border-radius:14px;font-weight:700;">
+    ⏱ Будем готовить до 10 минут
+  </div>
+</div>
+
+<div class="cart-summary">
       <span>Итого</span>
       <strong id="cartGrandTotal">0 ₽</strong>
     </div>
@@ -636,6 +661,15 @@ document.getElementById("cartModal").addEventListener("click", event => {
 document.getElementById("checkoutButton").onclick = function () {
   if (cartItems.length === 0) return;
 
+  const pickup = document.querySelector('input[name="pickup"]:checked');
+
+  if (!pickup) {
+    alert("Выберите, где вы заберёте заказ");
+    return;
+  }
+
+  const pickupPlace = pickup.value;
+
   const total = cartItems.reduce(
     (sum, item) => sum + item.price * (item.quantity || 1),
     0
@@ -647,7 +681,7 @@ document.getElementById("checkoutButton").onclick = function () {
   }).join("\n");
 
   const confirmed = confirm(
-    `Ваш заказ:\n\n${lines}\n\nИтого: ${total} ₽\n\nПерейти к оплате?`
+    `Ваш заказ:\n\n${lines}\n\n📍 Получение: ${pickupPlace}\n⏱ Будем готовить до 10 минут\n\nИтого: ${total} ₽\n\nПерейти к оплате?`
   );
 
   if (confirmed) {
