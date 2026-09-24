@@ -658,7 +658,7 @@ document.getElementById("cartModal").addEventListener("click", event => {
 
 
 <script>
-document.getElementById("checkoutButton").onclick = function () {
+document.getElementById("checkoutButton").onclick = async function () {
   if (cartItems.length === 0) return;
 
   const pickup = document.querySelector('input[name="pickup"]:checked');
@@ -684,11 +684,46 @@ document.getElementById("checkoutButton").onclick = function () {
     `Ваш заказ:\n\n${lines}\n\n📍 Получение: ${pickupPlace}\n⏱ Будем готовить до 10 минут\n\nИтого: ${total} ₽\n\nПерейти к оплате?`
   );
 
-  if (confirmed) {
-    alert("Следующим шагом здесь будет оплата заказа 💚");
+  if (!confirmed) return;
+
+  const order = {
+    items: cartItems.map(item => ({
+      name: item.name,
+      milk: item.milk || "",
+      supplements: item.supplements || [],
+      quantity: item.quantity || 1,
+      price: item.price
+    })),
+    total: total,
+    pickup: pickupPlace,
+    user_id: window.Telegram?.WebApp?.initDataUnsafe?.user?.id || null
+  };
+
+  try {
+    const response = await fetch(
+      "https://red-star-21aa.ufitme.workers.dev/",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(order)
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      console.error(result);
+      alert("Ошибка отправки заказа");
+      return;
+    }
+
+    alert("Заказ успешно оформлен ✅");
+
+  } catch (error) {
+    console.error(error);
+    alert("Не удалось отправить заказ");
   }
 };
 </script>
-
-</body>
-</html>
