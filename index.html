@@ -6,6 +6,65 @@
 <title>FitMe Bar</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
+<script>
+// Prevent double-tap zoom in iOS WebViews without blocking scrolling or pinch zoom.
+(() => {
+  let start = null;
+  let previousTap = null;
+
+  document.addEventListener('touchstart', event => {
+    if (event.touches.length !== 1) {
+      start = null;
+      previousTap = null;
+      return;
+    }
+    const touch = event.touches[0];
+    start = { x: touch.clientX, y: touch.clientY, time: event.timeStamp };
+  }, { passive: true });
+
+  document.addEventListener('touchmove', event => {
+    const touch = event.touches[0];
+    if (!start || event.touches.length !== 1 ||
+        Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > 10) {
+      start = null;
+      previousTap = null;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchcancel', () => {
+    start = null;
+    previousTap = null;
+  }, { passive: true });
+
+  document.addEventListener('touchend', event => {
+    if (!start || event.touches.length !== 0 ||
+        event.changedTouches.length !== 1 || event.timeStamp - start.time > 350) {
+      start = null;
+      previousTap = null;
+      return;
+    }
+    const touch = event.changedTouches[0];
+    const tap = { x: touch.clientX, y: touch.clientY, time: event.timeStamp };
+    const isDoubleTap = previousTap && tap.time - previousTap.time < 350 &&
+      Math.hypot(tap.x - previousTap.x, tap.y - previousTap.y) < 32;
+    start = null;
+    previousTap = tap;
+
+    if (isDoubleTap && event.cancelable && !event.defaultPrevented) {
+      event.preventDefault();
+      // Keep the second tap on buttons, labels and cart controls working.
+      if (event.target instanceof HTMLElement && event.target.isConnected) {
+        event.target.click();
+      }
+    }
+  }, { passive: false });
+
+  document.addEventListener('dblclick', event => {
+    if (event.cancelable) event.preventDefault();
+  }, { passive: false });
+})();
+</script>
+
 <style>
 * { box-sizing: border-box; touch-action: manipulation; }
 
