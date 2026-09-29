@@ -558,15 +558,23 @@ modalAdd.onclick = () => {
 };
 
 function updateCart() {
-  const total = cartItems.reduce((sum, item) => sum + item.price, 0);
+  const total = cartItems.reduce(
+    (sum, item) => sum + item.price * (item.quantity || 1),
+    0
+  );
+  const count = cartItems.reduce(
+    (sum, item) => sum + (item.quantity || 1),
+    0
+  );
 
   document.getElementById("cartCount").textContent =
-    `Корзина · ${cartItems.length}`;
+    `Корзина · ${count}`;
 
   document.getElementById("cartTotal").textContent =
     `${total} ₽ →`;
 
-  document.getElementById("cart").style.display = "flex";
+  document.getElementById("cart").style.display =
+    cartItems.length > 0 ? "flex" : "none";
 }
 
 modal.addEventListener("click", event => {
