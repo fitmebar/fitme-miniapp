@@ -3868,6 +3868,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 
 
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -4069,33 +4070,67 @@ function historyCard(order) {
 function historyState(title, description) {
   return `<div class="history-state"><strong>${esc(title)}</strong><p>${esc(description)}</p></div>`;
 }
-async function loadHistory(reset = true) {
-  if (!reset && historyLoading) return;
-  const generation = ++historyGeneration;
-  if (reset) { historyCursor = null; historyList.innerHTML = historyState('Загружаем заказы…', ''); }
-  historyMore.hidden = true;
-  if (!tg?.initData) {
-    historyList.innerHTML = historyState('Обновите кнопку запуска', 'Закройте это окно, отправьте /start в чат бота и откройте «Меню FitMe». История появится после входа через новую кнопку.');
-    historyLoading = false; return;
+let historyHasSnapshot = false;
+let historySession = '';
+const historyNotice = document.createElement('p');
+historyNotice.className = 'history-caption';
+historyNotice.setAttribute('role','status');
+historyList.before(historyNotice);
+async function fetchHistoryPage(cursor) {
+  // History is read-only: one bounded automatic retry is safe.
+  for (let attempt=0;attempt<2;attempt++) {
+    try {
+      const response = await fetch(API+'orders/list', {method:'POST',headers:authHeaders(),body:JSON.stringify({cursor}),cache:'no-store',signal:AbortSignal.timeout(attempt ? 6500 : 4000)});
+      const data = await response.json();
+      if (response.status>=500 && attempt===0) continue;
+      return {response,data};
+    } catch(error) { if (attempt===1) throw error; }
   }
+}
+async function loadHistory(reset = true) {
+  const session = tg?.initData || '';
+  if (session !== historySession) {
+    historySession = session; historyHasSnapshot = false; historyCursor = null;
+    historyLoading = false; ++historyGeneration; historyList.innerHTML = '';
+  }
+  if (historyLoading) return;
+  const generation = ++historyGeneration;
+  historyList.querySelectorAll('.history-retry').forEach(el=>el.remove());
+  if (!session) {
+    historyList.innerHTML = historyState('Обновите кнопку запуска', 'Закройте это окно, отправьте /start в чат бота и откройте «Меню FitMe». История появится после входа через новую кнопку.');
+    historyNotice.textContent = ''; historyMore.hidden = true; return;
+  }
+  const cursor = reset ? null : historyCursor;
+  if (!historyHasSnapshot) historyList.innerHTML = historyState('Загружаем заказы…', '');
+  historyNotice.textContent = historyHasSnapshot ? 'Обновляем статусы…' : '';
+  historyMore.disabled = true;
   historyLoading = true;
   try {
-    const response = await fetch(API+'orders/list', {method:'POST',headers:authHeaders(),body:JSON.stringify({cursor:historyCursor}),cache:'no-store',signal:AbortSignal.timeout(15000)});
-    const data = await response.json();
-    if (generation !== historyGeneration) return;
-    if (response.status === 401) { historyList.innerHTML = historyState('Откройте приложение заново', data.error || 'Подтвердите вход через Telegram.'); return; }
+    const {response,data} = await fetchHistoryPage(cursor);
+    if (generation !== historyGeneration || session !== tg?.initData) return;
+    if (response.status === 401 || response.status === 403) {
+      historyHasSnapshot = false; historyCursor = null; historyMore.hidden = true;
+      historyList.innerHTML = historyState('Откройте приложение заново', data.error || 'Подтвердите вход через Telegram.');
+      historyNotice.textContent = ''; return;
+    }
     if (!response.ok || !data.ok || !Array.isArray(data.orders)) throw new Error('History unavailable');
     if (reset) historyList.innerHTML = '';
     historyList.insertAdjacentHTML('beforeend', data.orders.map(historyCard).join(''));
-    if (reset && !data.orders.length) historyList.innerHTML = historyState('Здесь будут ваши заказы', 'Оформите заказ из меню — он появится здесь. История сохраняется с момента подключения этого раздела.');
+    if (reset && !data.orders.length) historyList.innerHTML = historyState('Здесь будут ваши заказы', 'Оформите заказ из меню — он появится здесь.');
+    historyHasSnapshot = true;
     historyCursor = data.next_cursor; historyMore.hidden = !historyCursor;
+    historyNotice.textContent = '';
   } catch {
-    if (generation !== historyGeneration) return;
-    if (reset) historyList.innerHTML = historyState('Не удалось загрузить историю', 'Проверьте соединение и попробуйте ещё раз.');
+    if (generation !== historyGeneration || session !== tg?.initData) return;
+    if (!historyHasSnapshot) historyList.innerHTML = historyState('Не удалось загрузить историю', 'Проверьте соединение и попробуйте ещё раз.');
+    historyNotice.textContent = historyHasSnapshot ? 'Показаны ранее загруженные заказы. Не удалось обновить статусы.' : '';
     const retry = document.createElement('button'); retry.className = 'history-retry'; retry.textContent = 'Попробовать снова';
-    retry.onclick = () => { retry.remove(); loadHistory(reset); }; historyList.append(retry);
-  } finally { if (generation === historyGeneration) historyLoading = false; }
+    retry.onclick = () => loadHistory(reset); historyList.append(retry);
+  } finally {
+    if (generation === historyGeneration) { historyLoading = false; historyMore.disabled = false; }
+  }
 }
+
 function showView(view) {
   closeModal(); closeCart();
   const history = view === 'history';
@@ -4129,6 +4164,9 @@ notifyButton.onclick = () => {
   catch {clearTimeout(timer);notifyButton.disabled=false;notifyHint.textContent='Откройте чат @FitMeBarbot и нажмите «Старт». Готовность также видна в «Моих заказах».';}
 };
 renderNotify();
+
+// Warm the private history only within this authenticated page session.
+setTimeout(() => { if (tg?.initData && !historyHasSnapshot && !historyLoading) loadHistory(true); }, 600);
 </script>
 
 </body>
