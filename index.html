@@ -3864,6 +3864,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 <script>
 
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -3970,7 +3971,7 @@ function clearPending() {
 }
 async function submitOrder() {
   if (orderIsSending || !cartItems.length) return;
-  if (!tg?.initData) return alert('Для оформления откройте приложение через бота FitMe в Telegram.');
+  if (!tg?.initData) return openVerifiedApp('menu');
   if (!pendingOrder) {
     if (!catalog) return;
     const pickup = document.querySelector('input[name="pickup"]:checked')?.value;
@@ -4070,7 +4071,8 @@ async function loadHistory(reset = true) {
   if (reset) { historyCursor = null; historyList.innerHTML = historyState('Загружаем заказы…', ''); }
   historyMore.hidden = true;
   if (!tg?.initData) {
-    historyList.innerHTML = historyState('Откройте FitMe в Telegram', 'История доступна только владельцу аккаунта. Запустите мини-приложение через бота.');
+    historyList.innerHTML = historyState('Ваша история заказов', 'Откройте личный кабинет FitMe — Telegram подтвердит ваш аккаунт.') + '<button class="history-retry" id="verifiedHistory">Открыть мои заказы</button>';
+    document.getElementById('verifiedHistory').onclick = () => openVerifiedApp('history');
     historyLoading = false; return;
   }
   historyLoading = true;
@@ -4102,7 +4104,7 @@ function showView(view) {
   if (history) loadHistory(true);
 }
 document.getElementById('menuTab').onclick = () => showView('menu');
-document.getElementById('historyTab').onclick = () => showView('history');
+document.getElementById('historyTab').onclick = () => { showView('history'); if (!tg?.initData && tg?.platform && tg.platform !== 'unknown') openVerifiedApp('history'); };
 document.getElementById('refreshHistory').onclick = () => loadHistory(true);
 historyMore.onclick = () => loadHistory(false);
 
@@ -4124,6 +4126,28 @@ notifyButton.onclick = () => {
   catch {clearTimeout(timer);notifyButton.disabled=false;notifyHint.textContent='Откройте чат @FitMeBarbot и нажмите «Старт». Готовность также видна в «Моих заказах».';}
 };
 renderNotify();
+
+function openVerifiedApp(view = 'menu') {
+  const url = 'https://t.me/FitMeBarbot?startapp=fitme_' + (view === 'history' ? 'history' : 'menu');
+  if (tg?.openTelegramLink && tg.platform && tg.platform !== 'unknown') {
+    try { tg.openTelegramLink(url); return; } catch {}
+  }
+  window.location.href = url;
+}
+// Keyboard launches do not carry signed user data. Reopen the Main Mini App,
+// without persisting or borrowing another session's identity.
+if (!tg?.initData && tg?.platform && tg.platform !== 'unknown' && tg.openTelegramLink) {
+  let recent = false;
+  try {
+    recent = Date.now() - Number(sessionStorage.getItem('fitme.launch-bridge') || 0) < 30000;
+    if (!recent) sessionStorage.setItem('fitme.launch-bridge',String(Date.now()));
+  } catch {}
+  if (!recent) openVerifiedApp('menu');
+}
+if (tg?.initData) {
+  try { sessionStorage.removeItem('fitme.launch-bridge'); } catch {}
+  if (tg.initDataUnsafe?.start_param === 'fitme_history') showView('history');
+}
 </script>
 
 </body>
