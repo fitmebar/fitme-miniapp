@@ -371,6 +371,10 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 @media(max-width:360px){header{padding:20px 16px}.brand{width:116px}.container{padding:24px 12px}.product-body{padding:10px}.product-image{height:148px}.product-title{font-size:13px}.product-bottom{gap:4px}.price{font-size:16px}.add-button{padding:10px 8px;font-size:10px}}
 </style>
 <style>header{flex-direction:column;justify-content:center;gap:12px;padding:24px 18px 20px}.location{text-align:center}.location strong{display:inline;font-size:12px;font-weight:500}.location{font-size:0}.brand{width:150px}</style>
+<style>
+[hidden]{display:none!important}body{padding-bottom:170px}.bottom-nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid var(--line);padding:9px 18px calc(9px + env(safe-area-inset-bottom));z-index:15;justify-content:center;gap:12px}.bottom-nav button{display:flex;flex-direction:column;align-items:center;gap:5px;background:#fff;color:var(--muted);font-size:11px;min-height:48px;max-width:250px;flex:1;border-radius:13px;padding:5px}.bottom-nav svg{width:21px;height:21px}.bottom-nav button[aria-current="page"]{color:#385b09;font-weight:700;box-shadow:inset 0 -3px 0 var(--lime)}.cart{bottom:calc(83px + env(safe-area-inset-bottom))}.history-view{padding-top:26px}.history-heading{display:flex;justify-content:space-between;align-items:center}.history-heading h1{font-size:30px;margin:12px 0}.history-caption{font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 24px}.history-refresh{background:white;border:1px solid var(--line);border-radius:50%;width:42px;height:42px;font-size:25px;color:var(--ink)}.history-card{background:white;border:1px solid var(--line);border-radius:20px;padding:18px;margin-bottom:14px}.history-top{display:flex;justify-content:space-between;align-items:center;gap:10px}.history-number{font-size:18px;font-weight:750;letter-spacing:-.5px}.history-date{font-size:11px;color:var(--muted);margin-top:5px}.history-status{font-size:10px;line-height:1.4;padding:6px 8px;border:1px solid #d7eeb6;border-radius:12px;color:#486320;max-width:125px}.history-status.pending,.history-status.failed{border-color:#ead6ad;color:#826029}.history-item{padding:13px 0;border-bottom:1px solid var(--line);font-size:13px;line-height:1.45}.history-item-head{display:flex;justify-content:space-between;gap:12px}.history-item-options{color:var(--muted);font-size:11px;margin-top:6px;line-height:1.6}.history-total{display:flex;justify-content:space-between;align-items:center;margin-top:16px;font-size:13px}.history-total strong{font-size:21px}.history-pickup{font-size:11px;color:var(--muted);margin-top:12px}.history-state{border:1px solid var(--line);border-radius:22px;padding:32px 20px;text-align:center;font-size:14px;line-height:1.6}.history-state strong{display:block;font-size:19px;letter-spacing:-.5px;margin-bottom:8px}.history-state p{color:var(--muted);font-size:12px;margin:0}.history-more,.history-retry{display:block;background:white;border:1px solid var(--line);padding:14px 20px;border-radius:14px;font-weight:600;color:var(--ink);margin:16px auto}.history-retry{background:var(--lime);border:0}
+</style>
+<style>.history-item-head>span{white-space:nowrap;flex-shrink:0}</style>
 </head>
 
 <body>
@@ -380,10 +384,20 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
   <div class="location">ЖДЁМ ВАС В БАРЕ<strong>ТЦ Family Room</strong></div>
 </header>
 
-<main class="container">
+<main class="container" id="menuView">
   <section class="intro"><div class="intro-label">Вкусно. В твоём ритме.</div><h1>Твоя порция<br>хорошего дня.</h1><p class="intro-copy">Выбери свой коктейль.<br>Молоко и добавки — как любишь.</p></section><div class="menu-heading"><h2>Авторские коктейли</h2><span>500 мл</span></div>
   <div id="products"></div><div class="menu-footnote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>Приготовим в течение 10 минут</div>
 </main>
+<section class="container history-view" id="historyView" hidden>
+ <div class="history-heading"><div><div class="intro-label">Личная история</div><h1>Мои заказы</h1></div><button id="refreshHistory" class="history-refresh" aria-label="Обновить историю">↻</button></div>
+ <p class="history-caption">Ваши напитки, добавки и суммы — в одном месте.</p>
+ <div id="historyList" aria-live="polite"></div>
+ <button id="historyMore" class="history-more" hidden>Показать ещё</button>
+</section>
+<nav class="bottom-nav" aria-label="Разделы приложения">
+ <button id="menuTab" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>Меню</button>
+ <button id="historyTab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6"/></svg>Мои заказы</button>
+</nav>
 
 <div class="cart" id="cart">
   <span id="cartCount">Корзина · 0</span>
@@ -456,7 +470,8 @@ let currentPrice = 0;
 let cartItems = [];
 let orderIsSending = false;
 let pendingOrder = null;
-const PENDING_KEY = 'fitme.pending-order.v2';
+const PENDING_KEY = 'fitme.pending-order.v3.' + (tg?.initDataUnsafe?.user?.id || 'guest');
+const authHeaders = () => ({'Content-Type':'application/json', 'Authorization':'tma ' + (tg?.initData || '')});
 const productsEl = document.getElementById('products');
 const modal = document.getElementById('modal');
 const modalTitle = document.getElementById('modalTitle');
@@ -551,6 +566,7 @@ function clearPending() {
 }
 async function submitOrder() {
   if (orderIsSending || !cartItems.length) return;
+  if (!tg?.initData) return alert('Для оформления откройте приложение через бота FitMe в Telegram.');
   if (!pendingOrder) {
     if (!catalog) return;
     const pickup = document.querySelector('input[name="pickup"]:checked')?.value;
@@ -568,7 +584,7 @@ async function submitOrder() {
   }
   orderIsSending = true; lockCart();
   try {
-    const response = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(pendingOrder), signal:AbortSignal.timeout(25000) });
+    const response = await fetch(API, { method:'POST', headers:authHeaders(), body:JSON.stringify(pendingOrder), signal:AbortSignal.timeout(25000) });
     const result = await response.json();
     if (response.ok && result.ok && result.order_id === pendingOrder.order_id) {
       const pickup = pendingOrder.pickup;
@@ -577,6 +593,8 @@ async function submitOrder() {
       document.querySelectorAll('input[name="pickup"]').forEach(el => { el.checked = false; });
       closeCart(); updateCart(); renderCart();
       alert(`Заказ успешно оформлен ✅\n\n⏱ Будем готовить до 10 минут.\n📍 Получение: ${pickup}`);
+    } else if (response.status === 401) {
+      alert(result.error || 'Откройте приложение заново через Telegram.');
     } else if (['CATALOG_CHANGED','PRICE_CHANGED','INVALID_ITEMS','INVALID_ITEM','INVALID_MODIFIER','INVALID_QUANTITY','INVALID_PICKUP','ORDER_TOO_LONG','UPDATE_REQUIRED'].includes(result.code)) {
       clearPending();
       alert(result.error || 'Проверьте состав заказа.');
@@ -615,12 +633,74 @@ async function loadCatalog() {
   lockCart();
 }
 try {
-  const saved = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null');
+  let saved = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null');
+  if (!saved && tg?.initDataUnsafe?.user?.id) {
+    const legacy = JSON.parse(localStorage.getItem('fitme.pending-order.v2') || 'null');
+    if (legacy?.order?.user_id === tg.initDataUnsafe.user.id) { saved = legacy; localStorage.setItem(PENDING_KEY, JSON.stringify(saved)); localStorage.removeItem('fitme.pending-order.v2'); }
+  }
   if (saved?.order?.order_id && Array.isArray(saved.display) && saved.display.length) {
     pendingOrder = saved.order; cartItems = saved.display; updateCart(); renderCart();
   }
 } catch { /* No request is sent until durable storage can be written. */ }
 loadCatalog();
+
+let historyCursor = null;
+let historyLoading = false;
+let historyGeneration = 0;
+const historyList = document.getElementById('historyList');
+const historyMore = document.getElementById('historyMore');
+const money = n => `${Number(n).toLocaleString('ru-RU')} ₽`;
+function historyCard(order) {
+  const status = order.status === 'sent' ? 'Отправлен в бар' : order.status === 'failed' ? 'Не отправлен' : 'Доставка уточняется';
+  const date = new Date(order.created_at).toLocaleString('ru-RU', {timeZone:'Europe/Moscow',day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  return `<article class="history-card"><div class="history-top"><div><div class="history-number">Заказ ${order.order_number ? '№'+esc(order.order_number) : ''}</div><div class="history-date">${esc(date)} · МСК</div></div><span class="history-status ${order.status === 'sent' ? '' : 'pending'}">${status}</span></div>
+    ${order.items.map(item=>`<div class="history-item"><div class="history-item-head"><strong>${esc(item.name)} × ${esc(item.quantity)}</strong><span>${money(item.price*item.quantity)}</span></div><div class="history-item-options">${esc(item.milk)}<br>${esc(item.supplements.join(', ') || 'Без добавок')}</div></div>`).join('')}
+    <div class="history-total"><span>Итого</span><strong>${money(order.total)}</strong></div><div class="history-pickup">${esc(order.pickup)}</div></article>`;
+}
+function historyState(title, description) {
+  return `<div class="history-state"><strong>${esc(title)}</strong><p>${esc(description)}</p></div>`;
+}
+async function loadHistory(reset = true) {
+  if (!reset && historyLoading) return;
+  const generation = ++historyGeneration;
+  if (reset) { historyCursor = null; historyList.innerHTML = historyState('Загружаем заказы…', ''); }
+  historyMore.hidden = true;
+  if (!tg?.initData) {
+    historyList.innerHTML = historyState('Откройте FitMe в Telegram', 'История доступна только владельцу аккаунта. Запустите мини-приложение через бота.');
+    historyLoading = false; return;
+  }
+  historyLoading = true;
+  try {
+    const response = await fetch(API+'orders/list', {method:'POST',headers:authHeaders(),body:JSON.stringify({cursor:historyCursor}),cache:'no-store',signal:AbortSignal.timeout(15000)});
+    const data = await response.json();
+    if (generation !== historyGeneration) return;
+    if (response.status === 401) { historyList.innerHTML = historyState('Откройте приложение заново', data.error || 'Подтвердите вход через Telegram.'); return; }
+    if (!response.ok || !data.ok || !Array.isArray(data.orders)) throw new Error('History unavailable');
+    if (reset) historyList.innerHTML = '';
+    historyList.insertAdjacentHTML('beforeend', data.orders.map(historyCard).join(''));
+    if (reset && !data.orders.length) historyList.innerHTML = historyState('Здесь будут ваши заказы', 'Оформите заказ из меню — он появится здесь. История сохраняется с момента подключения этого раздела.');
+    historyCursor = data.next_cursor; historyMore.hidden = !historyCursor;
+  } catch {
+    if (generation !== historyGeneration) return;
+    if (reset) historyList.innerHTML = historyState('Не удалось загрузить историю', 'Проверьте соединение и попробуйте ещё раз.');
+    const retry = document.createElement('button'); retry.className = 'history-retry'; retry.textContent = 'Попробовать снова';
+    retry.onclick = () => { retry.remove(); loadHistory(reset); }; historyList.append(retry);
+  } finally { if (generation === historyGeneration) historyLoading = false; }
+}
+function showView(view) {
+  closeModal(); closeCart();
+  const history = view === 'history';
+  document.getElementById('menuView').hidden = history;
+  document.getElementById('historyView').hidden = !history;
+  document.getElementById('menuTab').setAttribute('aria-current',history ? 'false' : 'page');
+  document.getElementById('historyTab').setAttribute('aria-current',history ? 'page' : 'false');
+  window.scrollTo(0,0);
+  if (history) loadHistory(true);
+}
+document.getElementById('menuTab').onclick = () => showView('menu');
+document.getElementById('historyTab').onclick = () => showView('history');
+document.getElementById('refreshHistory').onclick = () => loadHistory(true);
+historyMore.onclick = () => loadHistory(false);
 </script>
 
 </body>
