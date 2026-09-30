@@ -3815,7 +3815,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
     </div>
 
     <div id="cartItems"></div>
-    <p id="pendingNotice" hidden style="padding:14px;background:#fff3cd;border-radius:14px;line-height:1.4;">Проверяем отправку вашего заказа. Его состав сохранён. Пока доставка не подтверждена, не оформляйте такой же заказ заново.</p>
+    <p id="pendingNotice" hidden style="padding:14px;background:#fff3cd;border-radius:14px;line-height:1.4;">Подтверждение отправки пока не получено. Состав сохранён; нажмите «Проверить отправку заказа» ниже. Пока доставка не подтверждена, не оформляйте такой же заказ заново.</p>
 
     
 <div id="pickupBlock" style="margin-top:22px;">
@@ -3835,6 +3835,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
       <strong id="cartGrandTotal">0 ₽</strong>
     </div>
 
+    <div style="margin:18px 0;padding:16px;border:1px solid var(--line);border-radius:16px"><p id="notifyHint" style="font-size:13px;line-height:1.5;margin:0 0 10px"></p><button id="notifyButton" style="background:var(--lime);padding:12px;border-radius:12px;font-weight:600;width:100%">🔔 Сообщить, когда будет готово</button></div>
     <button class="checkout-button" id="checkoutButton">
       Оформить заказ
     </button>
@@ -3862,6 +3863,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 </div>
 
 <script>
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -4053,7 +4055,7 @@ const historyList = document.getElementById('historyList');
 const historyMore = document.getElementById('historyMore');
 const money = n => `${Number(n).toLocaleString('ru-RU')} ₽`;
 function historyCard(order) {
-  const status = order.status === 'sent' ? 'Отправлен в бар' : order.status === 'failed' ? 'Не отправлен' : 'Доставка уточняется';
+  const status = order.preparation_status === 'ready' ? '✅ Готов' : order.status === 'sent' ? 'Готовится' : order.status === 'failed' ? 'Не отправлен' : 'Доставка уточняется';
   const date = new Date(order.created_at).toLocaleString('ru-RU', {timeZone:'Europe/Moscow',day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
   return `<article class="history-card"><div class="history-top"><div><div class="history-number">Заказ ${order.order_number ? '№'+esc(order.order_number) : ''}</div><div class="history-date">${esc(date)} · МСК</div></div><span class="history-status ${order.status === 'sent' ? '' : 'pending'}">${status}</span></div>
     ${order.items.map(item=>`<div class="history-item"><div class="history-item-head"><strong>${esc(item.name)} × ${esc(item.quantity)}</strong><span>${money(item.price*item.quantity)}</span></div><div class="history-item-options">${esc(item.milk)}<br>${esc(item.supplements.join(', ') || 'Без добавок')}</div></div>`).join('')}
@@ -4103,6 +4105,25 @@ document.getElementById('menuTab').onclick = () => showView('menu');
 document.getElementById('historyTab').onclick = () => showView('history');
 document.getElementById('refreshHistory').onclick = () => loadHistory(true);
 historyMore.onclick = () => loadHistory(false);
+
+// Permission is requested only by an explicit customer tap; declining never blocks checkout.
+const notifyButton = document.getElementById('notifyButton');
+const notifyHint = document.getElementById('notifyHint');
+let canNotify = tg?.initDataUnsafe?.user?.allows_write_to_pm === true;
+function renderNotify() {
+  notifyButton.hidden = canNotify;
+  notifyHint.textContent = canNotify ? 'Бот сообщит, когда заказ будет готов.' : 'Включите сообщения от бота, чтобы узнать о готовности. Статус также доступен в «Моих заказах».';
+}
+notifyButton.onclick = () => {
+  if (!tg?.requestWriteAccess || !tg?.isVersionAtLeast?.('6.9')) {
+    alert('Откройте чат @FitMeBarbot и нажмите «Старт», чтобы получать сообщения.');return;
+  }
+  notifyButton.disabled = true;
+  const timer=setTimeout(()=>{notifyButton.disabled=false;},15000);
+  try {tg.requestWriteAccess(allowed=>{clearTimeout(timer);notifyButton.disabled=false;canNotify=allowed;renderNotify();});}
+  catch {clearTimeout(timer);notifyButton.disabled=false;notifyHint.textContent='Откройте чат @FitMeBarbot и нажмите «Старт». Готовность также видна в «Моих заказах».';}
+};
+renderNotify();
 </script>
 
 </body>
