@@ -3986,7 +3986,7 @@ async function submitOrder() {
   }
   orderIsSending = true; lockCart();
   try {
-    const response = await fetch(API, { method:'POST', headers:authHeaders(), body:JSON.stringify(pendingOrder), signal:AbortSignal.timeout(25000) });
+    const response = await fetch(API + '?v=private-history-2', { method:'POST', cache:'no-store', headers:authHeaders(), body:JSON.stringify(pendingOrder), signal:AbortSignal.timeout(25000) });
     const result = await response.json();
     if (response.ok && result.ok && result.order_id === pendingOrder.order_id) {
       const pickup = pendingOrder.pickup;
