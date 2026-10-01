@@ -3910,6 +3910,8 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 
 
+
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -3932,11 +3934,11 @@ async function loadFirstDrink(){
  try{
   const {response,data}=await readApiJson(API+'promotions/first-drink',{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
   if(!response.ok||typeof data.eligible!=='boolean')throw new Error();
-  firstEligible=data.eligible;firstLoaded=true;promoBanner.hidden=!data.eligible&&!data.reserved;
-  promoBanner.textContent=data.eligible?'Первый напиток — 1 ₽ 💚 Любой объём, молоко и добавки включены. В корзине скидку получит один самый дорогой напиток; остальные — по прайсу.':data.reserved?'Скидка на первый напиток закреплена за прежним неоплаченным счётом. После его отмены ЮKassa она снова станет доступна. Новые заказы пока — по прайсу.':'';
+  firstEligible=data.eligible;firstLoaded=true;promoBanner.hidden=!data.eligible;
+  promoBanner.textContent=data.eligible?'Первый напиток — 1 ₽ 💚 Любой объём, молоко и добавки включены. В корзине скидку получит один самый дорогой напиток; остальные — по прайсу.':'';
   if(catalog){const pickup=document.querySelector('input[name="pickup"]:checked')?.value;renderCatalog(catalog);document.querySelectorAll('input[name="pickup"]').forEach(el=>el.checked=el.value===pickup);}
   updateCart();renderCart();if(selectedProduct)calculatePrice();
- }catch{promoBanner.hidden=false;promoBanner.textContent='Не удалось проверить скидку на первый напиток. Повторим проверку перед оплатой.';}
+ }catch{promoBanner.hidden=true;}
 }
 const PENDING_KEY = 'fitme.pending-order.v3.' + (tg?.initDataUnsafe?.user?.id || 'guest');
 const authHeaders = () => ({'Content-Type':'application/json', 'Authorization':'tma ' + (tg?.initData || '')});
@@ -4109,16 +4111,16 @@ cancelPaymentButton.textContent='Вернуться к выбору и изме�
 checkoutButton.after(cancelPaymentButton);
 cancelPaymentButton.onclick=async()=>{
   if(orderIsSending || !pendingOrder)return;
+  if(!confirm('Отменить этот заказ и вернуться к выбору? Если после отмены оплатить старую ссылку, оформим возврат, а прежний заказ готовить не будем.'))return;
   orderIsSending=true;lockCart();
   try{
     const id=pendingOrder.order_id;
     const {response,data}=await paymentCall('cancel',{order_id:id});
     if(!response.ok || !data.ok || data.order_id!==id)throw new Error('Unverified payment');
     if(data.payment_status==='canceled'){clearPending();void loadFirstDrink();orderNotice('Заказ можно изменить.');}
-    else if(data.payment_status==='awaiting' && data.checkout_url){
-      if(!confirm('Вернуться к выбору напитков?\n\nЗакройте старую страницу оплаты и больше не оплачивайте её. Ссылка ещё действует: если оплатить старый счёт, в работу поступит прежний заказ.'))return;
-      saveDetached(id); // Keep reconciliation durable BEFORE unlocking the cart.
-      clearPending();firstEligible=false;void loadFirstDrink();closeCart();renderDetached();
+    else if(['superseded','refunding','refunded','refund_attention'].includes(data.payment_status)){
+      if(data.payment_status!=='refunded')saveDetached(id);
+      clearPending();firstEligible=false;await loadFirstDrink();closeCart();renderDetached();
     }else await showPaymentState(data);
   }catch{orderNotice('Не удалось проверить оплату. Состав сохранён. Попробуйте ещё раз.');}
   finally{orderIsSending=false;updateCart();renderCart();}
@@ -4131,7 +4133,7 @@ detachedNotice.style.cssText='padding:16px;margin:16px;border-radius:16px;backgr
 const detachedText=document.createElement('p');
 const detachedCheck=document.createElement('button');detachedCheck.type='button';detachedCheck.className='payment-edit';detachedCheck.textContent='Проверить прежние оплаты';
 detachedNotice.append(detachedText,detachedCheck);document.getElementById('menuView').before(detachedNotice);
-function renderDetached(){detachedNotice.hidden=!detached.length;detachedText.textContent='Вы вернулись к выбору напитков. Прежние страницы оплаты нужно закрыть. Если оплатить старый счёт, будет оформлен прежний заказ. Незавершённых счетов: '+detached.length+'.';}
+function renderDetached(){detachedNotice.hidden=!detached.length;detachedText.textContent='Вы вернулись к выбору напитков. Прежние страницы оплаты нужно закрыть. Отменённый заказ не готовим; если оплатить его старую ссылку, оформим возврат. Незавершённых счетов: '+detached.length+'.';}
 function writeDetached(ids){const value=JSON.stringify(ids);localStorage.setItem(DETACHED_KEY,value);if(localStorage.getItem(DETACHED_KEY)!==value)throw new Error('Storage failed');detached=ids;renderDetached();}
 function saveDetached(id){if(!detached.includes(id))writeDetached([...detached,id]);}
 let detachedChecking=false;
@@ -4141,9 +4143,13 @@ async function checkDetached(){
  try{
   for(const id of [...detached]){
    try{
-    const {response,data}=await paymentCall('status',{order_id:id});
+    const {response,data}=await paymentCall('cancel',{order_id:id});
     if(!response.ok||!data.ok||data.order_id!==id)continue;
     if(data.payment_status==='canceled'){writeDetached(detached.filter(x=>x!==id));void loadFirstDrink();}
+    else if(data.payment_status==='refunded'){
+     writeDetached(detached.filter(x=>x!==id));void loadFirstDrink();alert('ЮKassa подтвердила возврат оплаты отменённого заказа. Срок зачисления зависит от банка. Текущая корзина сохранена.');
+    }else if(data.payment_status==='refunding')detachedText.textContent='Оплата отменённого заказа поступила. ЮKassa обрабатывает возврат. Этот заказ не готовим.';
+    else if(data.payment_status==='refund_attention')detachedText.textContent='Возврат оплаты отменённого заказа требует проверки сотрудником. Обратитесь в бар. Текущий заказ можно оформить отдельно.';
     else if(data.payment_status==='paid'||data.payment_status==='legacy'){
      historyHasSnapshot=false;
      if(data.delivery_status==='sent'){
@@ -4169,6 +4175,9 @@ async function showPaymentState(result){
     alert(`Заказ принят ✅\n${result.order_number?'№'+result.order_number+'\n':''}📍 ${pickup}\nСообщим, когда будет готово.`);
   }else if(result.payment_status==='paid'){
     orderNotice('Оплата получена. Передача заказа сотрудникам пока не подтверждена. Не оплачивайте повторно: нажмите «Продолжить / проверить оплату» или обратитесь к сотруднику.');
+  }else if(['superseded','refunding','refunded','refund_attention'].includes(result.payment_status)){
+    if(result.payment_status!=='refunded')saveDetached(result.order_id);
+    clearPending();firstEligible=false;void loadFirstDrink();orderNotice('Прежний заказ отменён. Можно выбрать напиток заново.');
   }else if(result.payment_status==='awaiting'){
     orderNotice(result.error||'Оплата ещё не завершена. Нажмите «Продолжить / проверить оплату», чтобы вернуться к тому же счёту.');
   }else if(result.payment_status==='checking'){
