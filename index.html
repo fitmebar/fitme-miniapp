@@ -3870,6 +3870,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 
 
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -3890,7 +3891,7 @@ const checkoutButton = document.getElementById('checkoutButton');
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const totalOf = items => items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 const selectedVariant = () => selectedProduct?.variants?.find(v => v.id === document.querySelector('input[name="volume"]:checked')?.value);
-const allowedMilk = product => catalog.milk.filter(m => m.available !== false && (!product.milk_ids || product.milk_ids.includes(m.id)));
+const allowedMilk = product => (product.milk_ids ? product.milk_ids.map(id => catalog.milk.find(m => m.id === id)) : catalog.milk).filter(m => m && m.available !== false);
 const allowedSupplements = product => catalog.supplements.filter(s => s.available !== false && (!product.supplement_ids || product.supplement_ids.includes(s.id)));
 
 function lockCart() {
