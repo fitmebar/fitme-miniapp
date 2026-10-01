@@ -4087,18 +4087,57 @@ checkoutLink.style.cssText='text-align:center;margin:16px 0;color:#496c19';
 checkoutButton.after(checkoutLink);
 const cancelPaymentButton=document.createElement('button');
 cancelPaymentButton.className='payment-edit';
-cancelPaymentButton.textContent='Изменить заказ';
+cancelPaymentButton.textContent='Вернуться к выбору и изменить заказ';
 checkoutButton.after(cancelPaymentButton);
 cancelPaymentButton.onclick=async()=>{
   if(orderIsSending || !pendingOrder)return;
   orderIsSending=true;lockCart();
   try{
-    const {data}=await paymentCall('cancel',{order_id:pendingOrder.order_id});
+    const id=pendingOrder.order_id;
+    const {response,data}=await paymentCall('cancel',{order_id:id});
+    if(!response.ok || !data.ok || data.order_id!==id)throw new Error('Unverified payment');
     if(data.payment_status==='canceled'){clearPending();orderNotice('Заказ можно изменить.');}
-    else await showPaymentState(data);
+    else if(data.payment_status==='awaiting' && data.checkout_url){
+      if(!confirm('Вернуться к выбору напитков?\n\nЗакройте старую страницу оплаты и больше не оплачивайте её. Ссылка ещё действует: если оплатить старый счёт, в работу поступит прежний заказ.'))return;
+      saveDetached(id); // Keep reconciliation durable BEFORE unlocking the cart.
+      clearPending();closeCart();renderDetached();
+    }else await showPaymentState(data);
   }catch{orderNotice('Не удалось проверить оплату. Состав сохранён. Попробуйте ещё раз.');}
   finally{orderIsSending=false;updateCart();renderCart();}
 };
+const DETACHED_KEY='fitme.detached-payments.v1.'+(tg?.initDataUnsafe?.user?.id||'guest');
+let detached=[];
+try{const ids=JSON.parse(localStorage.getItem(DETACHED_KEY)||'[]');if(Array.isArray(ids))detached=ids.filter(id=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id));}catch{}
+const detachedNotice=document.createElement('div');
+detachedNotice.style.cssText='padding:16px;margin:16px;border-radius:16px;background:#fff5d2;font-size:14px;line-height:1.5';
+const detachedText=document.createElement('p');
+const detachedCheck=document.createElement('button');detachedCheck.type='button';detachedCheck.className='payment-edit';detachedCheck.textContent='Проверить прежние оплаты';
+detachedNotice.append(detachedText,detachedCheck);document.getElementById('menuView').before(detachedNotice);
+function renderDetached(){detachedNotice.hidden=!detached.length;detachedText.textContent='Вы вернулись к выбору напитков. Прежние страницы оплаты нужно закрыть. Если оплатить старый счёт, будет оформлен прежний заказ. Незавершённых счетов: '+detached.length+'.';}
+function writeDetached(ids){const value=JSON.stringify(ids);localStorage.setItem(DETACHED_KEY,value);if(localStorage.getItem(DETACHED_KEY)!==value)throw new Error('Storage failed');detached=ids;renderDetached();}
+function saveDetached(id){if(!detached.includes(id))writeDetached([...detached,id]);}
+let detachedChecking=false;
+async function checkDetached(){
+ if(detachedChecking||!tg?.initData||document.hidden||!detached.length)return;
+ detachedChecking=true;detachedCheck.disabled=true;
+ try{
+  for(const id of [...detached]){
+   try{
+    const {response,data}=await paymentCall('status',{order_id:id});
+    if(!response.ok||!data.ok||data.order_id!==id)continue;
+    if(data.payment_status==='canceled')writeDetached(detached.filter(x=>x!==id));
+    else if(data.payment_status==='paid'||data.payment_status==='legacy'){
+     historyHasSnapshot=false;
+     if(data.delivery_status==='sent'){
+      writeDetached(detached.filter(x=>x!==id));
+      alert('Прежний заказ оплачен и принят'+(data.order_number?' — №'+data.order_number:'')+'. Посмотрите его в «Моих заказах». Текущая корзина сохранена.');
+     }else detachedText.textContent='Оплата прежнего заказа получена. Проверяем передачу сотрудникам. Не оплачивайте этот счёт повторно.';
+    }
+   }catch{detachedText.textContent='Не удалось проверить прежние оплаты. Они сохранены; повторите проверку позже. Старые страницы оплаты не используйте.';}
+  }
+ }finally{detachedChecking=false;detachedCheck.disabled=false;}
+}
+detachedCheck.onclick=checkDetached;renderDetached();
 async function paymentCall(action,body){
   return readApiJson(API+(action==='receipt-email'?'payments/':'checkout/')+action,{method:'POST',cache:'no-store',headers:authHeaders(),body:JSON.stringify(body)},15000);
 }
@@ -4138,6 +4177,7 @@ async function openPayment(url){
 }
 let returnCheckRunning=false;
 async function checkOnReturn(){
+  void checkDetached();
   // Input/keyboard focus is not a return from checkout. No payment exists yet at the email step.
   if(!pendingOrder||!receiptField.hidden||orderIsSending||returnCheckRunning||document.hidden)return;
   returnCheckRunning=true;orderIsSending=true;lockCart();
@@ -4359,6 +4399,8 @@ renderNotify();
 
 // Warm the private history only within this authenticated page session.
 setTimeout(() => { if (tg?.initData && !historyHasSnapshot && !historyLoading) loadHistory(true); }, 600);
+
+setTimeout(checkDetached,1000);
 </script>
 
 </body>
