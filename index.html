@@ -3909,6 +3909,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 
 
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -4046,6 +4047,7 @@ function persistPending(order) {
 function clearPending() {
   localStorage.removeItem(PENDING_KEY);
   pendingOrder = null;
+  checkoutLink.hidden=true;receiptField.hidden=true;
 }
 function orderNotice(text) {
   const notice = document.getElementById('pendingNotice');
@@ -4074,6 +4076,15 @@ receiptChange.onclick=async()=>{
   }catch{alert('Не удалось изменить настройку. Попробуйте ещё раз.');}
   finally{receiptChange.disabled=false;}
 };
+const receiptField=document.createElement('div');
+receiptField.hidden=true;
+receiptField.innerHTML='<label for="receiptEmail">Почта для чека</label><input id="receiptEmail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.ru" style="display:block;box-sizing:border-box;width:100%;padding:14px;margin:8px 0 14px;border:1px solid #dce0d6;border-radius:14px;font:inherit">';
+checkoutButton.before(receiptField);
+const checkoutLink=document.createElement('a');
+checkoutLink.textContent='Открыть страницу оплаты';
+checkoutLink.target='_blank';checkoutLink.rel='noopener noreferrer';checkoutLink.hidden=true;
+checkoutLink.style.cssText='text-align:center;margin:16px 0;color:#496c19';
+checkoutButton.after(checkoutLink);
 const cancelPaymentButton=document.createElement('button');
 cancelPaymentButton.className='payment-edit';
 cancelPaymentButton.textContent='Изменить заказ';
@@ -4089,7 +4100,7 @@ cancelPaymentButton.onclick=async()=>{
   finally{orderIsSending=false;updateCart();renderCart();}
 };
 async function paymentCall(action,body){
-  return readApiJson(API+'payments/'+action,{method:'POST',cache:'no-store',headers:authHeaders(),body:JSON.stringify(body)},15000);
+  return readApiJson(API+(action==='receipt-email'?'payments/':'checkout/')+action,{method:'POST',cache:'no-store',headers:authHeaders(),body:JSON.stringify(body)},15000);
 }
 async function showPaymentState(result){
   if(!pendingOrder || result.order_id!==pendingOrder.order_id)return;
@@ -4101,6 +4112,8 @@ async function showPaymentState(result){
     alert(`Заказ принят ✅\n${result.order_number?'№'+result.order_number+'\n':''}📍 ${pickup}\nСообщим, когда будет готово.`);
   }else if(result.payment_status==='paid'){
     orderNotice('Оплата получена. Передача заказа сотрудникам пока не подтверждена. Не оплачивайте повторно: нажмите «Продолжить / проверить оплату» или обратитесь к сотруднику.');
+  }else if(result.payment_status==='awaiting'){
+    orderNotice(result.error||'Оплата ещё не завершена. Нажмите «Продолжить / проверить оплату», чтобы вернуться к тому же счёту.');
   }else if(result.payment_status==='checking'){
     orderNotice('Ожидаем подтверждение платежа. Не оплачивайте повторно. Если банк отклонил платёж или деньги списаны, а статус не меняется — обратитесь к сотруднику для проверки.');
   }else if(result.payment_status==='canceled'){
@@ -4118,17 +4131,20 @@ async function checkPayment(){
   }
 }
 async function openPayment(url){
-  if(typeof tg?.openInvoice!=='function')throw new Error('Обновите Telegram для оплаты.');
-  // The callback never authorizes delivery. Only the authenticated server webhook does.
-  tg.openInvoice(url,async status=>{
-    orderIsSending=true;lockCart();
-    try{
-      if(status==='cancelled' || status==='failed')orderNotice('Оплата не завершена. Заказ сотрудникам не отправлен без подтверждённого платежа.');
-      await checkPayment();
-    }catch{orderNotice('Не удалось проверить платёж. Не оплачивайте повторно, нажмите «Продолжить / проверить оплату».');}
-    finally{orderIsSending=false;updateCart();renderCart();}
-  });
+  const u=new URL(url);
+  if(u.protocol!=='https:'||u.hostname!=='yoomoney.ru'||u.username||u.password||u.port)throw new Error('Некорректная ссылка оплаты');
+  checkoutLink.href=url;checkoutLink.hidden=false;
+  if(typeof tg?.openLink==='function')tg.openLink(url,{try_instant_view:false});
 }
+let returnCheckRunning=false;
+async function checkOnReturn(){
+  if(!pendingOrder||orderIsSending||returnCheckRunning||document.hidden)return;
+  returnCheckRunning=true;orderIsSending=true;lockCart();
+  try{await checkPayment();}catch{orderNotice('Не удалось проверить оплату. Нажмите «Продолжить / проверить оплату».');}
+  finally{returnCheckRunning=false;orderIsSending=false;updateCart();renderCart();}
+}
+window.addEventListener('focus',checkOnReturn);
+document.addEventListener('visibilitychange',checkOnReturn);
 async function submitOrder(){
   if(orderIsSending || !cartItems.length)return;
   if(!tg?.initData)return alert('Откройте меню через бота FitMe в Telegram.');
@@ -4144,10 +4160,12 @@ async function submitOrder(){
   }
   orderIsSending=true;lockCart();orderNotice('Проверяем заказ и подготавливаем оплату…');
   try{
-    const {response,data}=await paymentCall('create',pendingOrder);
-    if(response.ok && data.payment_status==='awaiting' && data.invoice_url){
-      orderNotice('Оплатите заказ в окне Telegram. Сотрудники получат его после подтверждения платежа.');
-      await openPayment(data.invoice_url);
+    const {response,data}=await paymentCall('create',{...pendingOrder,...(!receiptField.hidden?{receipt_email:document.getElementById('receiptEmail').value.trim()}: {})});
+    if(response.ok && data.payment_status==='awaiting' && data.checkout_url){
+      orderNotice('Откроется ЮKassa. Выберите удобный способ оплаты, затем вернитесь в бот. Заказ поступит сотрудникам только после оплаты.');
+      await openPayment(data.checkout_url);
+    }else if(data.code==='EMAIL_REQUIRED'){
+      receiptField.hidden=false;document.getElementById('receiptEmail').focus();orderNotice(data.error);
     }else if(['CATALOG_CHANGED','PRICE_CHANGED','INVALID_ITEMS','INVALID_ITEM','INVALID_MODIFIER','INVALID_QUANTITY','INVALID_PICKUP','ORDER_TOO_LONG'].includes(data.code)){
       clearPending();alert(data.error);cartItems=[];updateCart();await loadCatalog();
     }else if(data.payment_status==='checking'||data.payment_status==='paid'){
