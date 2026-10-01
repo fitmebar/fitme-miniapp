@@ -3908,6 +3908,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 
 
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -4052,6 +4053,27 @@ function orderNotice(text) {
   notice.setAttribute('role', 'status');
   notice.setAttribute('aria-live', 'polite');
 }
+const receiptNote=document.createElement('p');
+receiptNote.style.cssText='font-size:13px;line-height:1.5;color:#777;text-align:center;margin:12px 0';
+receiptNote.textContent='Почту для чеков сохраним после первой оплаты. В следующих заказах вводить её заново не нужно.';
+const receiptChange=document.createElement('button');
+receiptChange.type='button';
+receiptChange.className='payment-edit';
+receiptChange.textContent='Изменить почту для чеков';
+receiptChange.style.display='block';
+checkoutButton.before(receiptNote,receiptChange);
+receiptChange.onclick=async()=>{
+  if(orderIsSending)return;
+  if(pendingOrder){alert('Сначала завершите оплату или нажмите «Изменить заказ». Почта уже созданного счёта не меняется.');return;}
+  if(!confirm('Запросить новую почту при следующей оплате?'))return;
+  receiptChange.disabled=true;
+  try{
+    const {response,data}=await paymentCall('receipt-email',{reset:true});
+    if(!response.ok || !data.ok)throw new Error();
+    receiptNote.textContent='При следующей оплате укажите новую почту. После оплаты сохраним её для следующих заказов.';
+  }catch{alert('Не удалось изменить настройку. Попробуйте ещё раз.');}
+  finally{receiptChange.disabled=false;}
+};
 const cancelPaymentButton=document.createElement('button');
 cancelPaymentButton.className='payment-edit';
 cancelPaymentButton.textContent='Изменить заказ';
@@ -4309,7 +4331,6 @@ renderNotify();
 
 // Warm the private history only within this authenticated page session.
 setTimeout(() => { if (tg?.initData && !historyHasSnapshot && !historyLoading) loadHistory(true); }, 600);
-
 </script>
 
 </body>
