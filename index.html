@@ -3872,6 +3872,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 
 
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -3982,6 +3983,30 @@ function clearPending() {
   localStorage.removeItem(PENDING_KEY);
   pendingOrder = null;
 }
+function orderNotice(text) {
+  const notice = document.getElementById('pendingNotice');
+  notice.textContent = text;
+  notice.setAttribute('role', 'status');
+  notice.setAttribute('aria-live', 'polite');
+}
+async function sendPendingOrder(order) {
+  // Replays use the exact durable ID/payload. The server alone decides whether to send.
+  const body = JSON.stringify(order);
+  for (let attempt=0; attempt<3; attempt++) {
+    if (navigator.onLine === false) throw new Error('Offline');
+    orderNotice(attempt ? `Проверяем отправку — попытка ${attempt+1} из 3. Состав сохранён, новый заказ не создаётся.` : 'Отправляем заказ. Дождитесь подтверждения.');
+    const slow = setTimeout(() => orderNotice('Сервер отвечает дольше обычного. Проверяем тот же заказ — повторно оформлять его не нужно.'), 3000);
+    try {
+      const answer = await readApiJson(API+'?v=private-history-2', {method:'POST',cache:'no-store',headers:authHeaders(),body}, 7000);
+      const retry = answer.data.code === 'DELIVERY_UNCERTAIN' || answer.response.status >= 500;
+      if (!retry || attempt === 2) return answer;
+    } catch (error) {
+      if (attempt === 2) throw error;
+    } finally { clearTimeout(slow); }
+    orderNotice('Связь нестабильна. Через пару секунд автоматически проверим отправку.');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+}
 async function submitOrder() {
   if (orderIsSending || !cartItems.length) return;
   if (!tg?.initData) return alert('Закройте это окно. В чате бота отправьте /start и откройте меню новой кнопкой «Меню FitMe».');
@@ -4002,8 +4027,7 @@ async function submitOrder() {
   }
   orderIsSending = true; lockCart();
   try {
-    const response = await fetch(API + '?v=private-history-2', { method:'POST', cache:'no-store', headers:authHeaders(), body:JSON.stringify(pendingOrder), signal:AbortSignal.timeout(25000) });
-    const result = await response.json();
+    const {response, data:result} = await sendPendingOrder(pendingOrder);
     if (response.ok && result.ok && result.order_id === pendingOrder.order_id) {
       const pickup = pendingOrder.pickup;
       // If local storage cannot clear, retain the snapshot: replay is server-safe.
@@ -4012,6 +4036,7 @@ async function submitOrder() {
       closeCart(); updateCart(); renderCart();
       alert(`Заказ успешно оформлен ✅\n\n⏱ Будем готовить до 10 минут.\n📍 Получение: ${pickup}`);
     } else if (response.status === 401) {
+      orderNotice('Сессия Telegram закончилась. Закройте и откройте приложение через бота. Состав заказа сохранён.');
       alert(result.error || 'Откройте приложение заново через Telegram.');
     } else if (['CATALOG_CHANGED','PRICE_CHANGED','INVALID_ITEMS','INVALID_ITEM','INVALID_MODIFIER','INVALID_QUANTITY','INVALID_PICKUP','ORDER_TOO_LONG','UPDATE_REQUIRED'].includes(result.code)) {
       clearPending();
@@ -4020,10 +4045,10 @@ async function submitOrder() {
         cartItems = []; updateCart(); renderCart(); await loadCatalog();
       }
     } else {
-      alert((result.error || 'Не удалось подтвердить отправку заказа.') + '\n\nКнопка «Проверить отправку заказа» использует тот же заказ и не создаёт новый.');
+      orderNotice(result.code === 'DELIVERY_UNCERTAIN' ? 'Сервер получил запрос, но доставка сотрудникам не подтверждена. Уточните у сотрудника, поступил ли заказ. Состав сохранён; проверка не создаст дубль.' : (result.error || 'Отправка пока не подтверждена.') + ' Состав сохранён. Нажмите «Проверить отправку заказа».');
     }
   } catch {
-    alert('Ответ сервера не получен. Заказ мог поступить сотрудникам.\n\nНажмите «Проверить отправку заказа». Состав и номер сохранены; новый заказ не создаётся.');
+    orderNotice(navigator.onLine === false ? 'Нет подключения к интернету. Состав сохранён. Когда связь появится, нажмите «Проверить отправку заказа».' : 'Связаться с сервером не удалось после трёх попыток. Заказ мог поступить сотрудникам. Состав сохранён: проверьте интернет и нажмите «Проверить отправку заказа».');
   } finally { orderIsSending = false; updateCart(); renderCart(); }
 }
 checkoutButton.onclick = submitOrder;
