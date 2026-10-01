@@ -3937,7 +3937,7 @@ function lockCart() {
   const locked = !!pendingOrder || orderIsSending;
   document.querySelectorAll('.qty-button, input[name="pickup"], .add-button, #modalAdd').forEach(el => { el.disabled = locked; });
   checkoutButton.disabled = orderIsSending || (!pendingOrder && !catalog);
-  checkoutButton.textContent = orderIsSending ? 'Проверяем…' : pendingOrder ? 'Продолжить / проверить оплату' : 'Оплатить заказ';
+  checkoutButton.textContent = orderIsSending ? 'Проверяем…' : !receiptField.hidden ? 'Перейти к оплате' : pendingOrder ? 'Продолжить / проверить оплату' : 'Оплатить заказ';
   document.getElementById('pendingNotice').hidden = !pendingOrder;
   cancelPaymentButton.hidden = !pendingOrder;
   cancelPaymentButton.disabled = orderIsSending;
@@ -4138,7 +4138,8 @@ async function openPayment(url){
 }
 let returnCheckRunning=false;
 async function checkOnReturn(){
-  if(!pendingOrder||orderIsSending||returnCheckRunning||document.hidden)return;
+  // Input/keyboard focus is not a return from checkout. No payment exists yet at the email step.
+  if(!pendingOrder||!receiptField.hidden||orderIsSending||returnCheckRunning||document.hidden)return;
   returnCheckRunning=true;orderIsSending=true;lockCart();
   try{await checkPayment();}catch{orderNotice('Не удалось проверить оплату. Нажмите «Продолжить / проверить оплату».');}
   finally{returnCheckRunning=false;orderIsSending=false;updateCart();renderCart();}
@@ -4158,9 +4159,18 @@ async function submitOrder(){
       items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup};
     try{persistPending(order);}catch{return alert('Не удалось сохранить заказ. Оплата не открывалась.');}
   }
+  const emailInput=document.getElementById('receiptEmail');
+  const needsEmail=!receiptField.hidden;
+  const email=needsEmail?emailInput.value.trim():null;
+  if(needsEmail && (!email || !emailInput.checkValidity())){
+    orderNotice('Укажите корректную почту для чека. После первой оплаты сохраним её.');
+    emailInput.focus();return;
+  }
+  // Once creation starts its outcome may be uncertain; permit reconciliation again.
+  receiptField.hidden=true;
   orderIsSending=true;lockCart();orderNotice('Проверяем заказ и подготавливаем оплату…');
   try{
-    const {response,data}=await paymentCall('create',{...pendingOrder,...(!receiptField.hidden?{receipt_email:document.getElementById('receiptEmail').value.trim()}: {})});
+    const {response,data}=await paymentCall('create',{...pendingOrder,...(needsEmail?{receipt_email:email}: {})});
     if(response.ok && data.payment_status==='awaiting' && data.checkout_url){
       orderNotice('Откроется ЮKassa. Выберите удобный способ оплаты, затем вернитесь в бот. Заказ поступит сотрудникам только после оплаты.');
       await openPayment(data.checkout_url);
