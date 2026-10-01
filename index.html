@@ -3787,7 +3787,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 </header>
 
 <main class="container" id="menuView">
-  <section class="intro"><div class="intro-label">Вкусно. В твоём ритме.</div><h1>Твоя порция<br>хорошего дня.</h1><p class="intro-copy">Выбери свой коктейль.<br>Молоко и добавки — как любишь.</p></section><div class="menu-heading"><h2>Авторские коктейли</h2><span>500 мл</span></div>
+  <section class="intro"><div class="intro-label">Вкусно. В твоём ритме.</div><h1>Твоя порция<br>хорошего дня.</h1><p class="intro-copy">Выбери свой напиток.<br>Молоко и добавки — как любишь.</p></section>
   <div id="products"></div><div class="menu-footnote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>Приготовим в течение 10 минут</div>
 </main>
 <section class="container history-view" id="historyView" hidden>
@@ -3848,10 +3848,10 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
     <div class="modal-title" id="modalTitle"></div>
     <div class="product-info" id="modalInfo"></div>
 
-    <div class="section-title">Выберите молоко</div>
-    <div id="milkOptions"></div>
-    <div class="section-title">Добавить БАДы</div>
-    <div id="supplementOptions"></div>
+    <div id="volumeBlock" hidden><div class="section-title">Объём</div><div id="volumeOptions"></div></div><div id="milkBlock"><div class="section-title">Выберите молоко</div>
+    <div id="milkOptions"></div></div>
+    <div id="supplementBlock"><div class="section-title">Добавки</div>
+    <div id="supplementOptions"></div></div>
 
     <button class="modal-add" id="modalAdd">
       Добавить в корзину
@@ -3863,6 +3863,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 </div>
 
 <script>
+
 
 
 
@@ -3888,6 +3889,7 @@ const modalAdd = document.getElementById('modalAdd');
 const checkoutButton = document.getElementById('checkoutButton');
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const totalOf = items => items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+const selectedVariant = () => selectedProduct?.variants?.find(v => v.id === document.querySelector('input[name="volume"]:checked')?.value);
 const allowedMilk = product => catalog.milk.filter(m => m.available !== false && (!product.milk_ids || product.milk_ids.includes(m.id)));
 const allowedSupplements = product => catalog.supplements.filter(s => s.available !== false && (!product.supplement_ids || product.supplement_ids.includes(s.id)));
 
@@ -3912,8 +3914,8 @@ function renderCart() {
   const box = document.getElementById('cartItems');
   box.innerHTML = cartItems.map((item, index) => `
     <div class="cart-item">
-      <div class="cart-item-name">${esc(item.name)}</div>
-      <div class="cart-item-options">${esc(item.milk)}<br>${esc(item.supplements.join(', ') || 'Без БАДов')}</div>
+      <div class="cart-item-name">${esc(item.name)}${item.volume ? ` · ${esc(item.volume)}` : ''}</div>
+      <div class="cart-item-options">${esc(item.milk)}<br>${esc(item.supplements.join(', ') || 'Без добавок')}</div>
       <div class="cart-item-bottom"><div class="cart-quantity">
         <button class="qty-button" data-index="${index}" data-delta="-1">−</button>
         <strong>${item.quantity}</strong><button class="qty-button" data-index="${index}" data-delta="1">+</button>
@@ -3936,17 +3938,21 @@ function openProduct(index) {
   selectedProduct = products[index];
   modalTitle.textContent = selectedProduct.name;
   document.getElementById('modalInfo').textContent = `${selectedProduct.volume} · от ${selectedProduct.price} ₽`;
+  document.getElementById('volumeOptions').innerHTML = (selectedProduct.variants || []).map((v,i) => `<label class="option"><span class="option-left"><input type="radio" name="volume" value="${esc(v.id)}" ${i===0?'checked':''}>${esc(v.volume)}</span><span>${v.price} ₽</span></label>`).join('');
+  document.getElementById('volumeBlock').hidden = !selectedProduct.variants;
+  document.getElementById('milkBlock').hidden = allowedMilk(selectedProduct).length < 2;
+  document.getElementById('supplementBlock').hidden = !allowedSupplements(selectedProduct).length;
   document.getElementById('milkOptions').innerHTML = allowedMilk(selectedProduct).map((milk, i) => `
     <label class="option"><span class="option-left"><input type="radio" name="milk" value="${esc(milk.id)}" ${i === 0 ? 'checked' : ''}>${esc(milk.name)}</span><span>${milk.price ? '+' + milk.price + ' ₽' : 'включено'}</span></label>`).join('');
   document.getElementById('supplementOptions').innerHTML = allowedSupplements(selectedProduct).map(s => `
     <label class="option"><span class="option-left"><input class="supplement" type="checkbox" value="${esc(s.id)}">${esc(s.name)}</span><span>+${s.price} ₽</span></label>`).join('');
-  document.querySelectorAll('input[name="milk"], .supplement').forEach(el => el.onchange = calculatePrice);
+  document.querySelectorAll('input[name="milk"], input[name="volume"], .supplement').forEach(el => el.onchange = calculatePrice);
   calculatePrice(); modal.style.display = 'flex';
 }
 function calculatePrice() {
   const milk = catalog.milk.find(m => m.id === document.querySelector('input[name="milk"]:checked')?.value);
   const selected = [...document.querySelectorAll('.supplement:checked')].map(el => el.value);
-  currentPrice = selectedProduct.price + (milk?.price || 0) + catalog.supplements.filter(s => selected.includes(s.id)).reduce((sum, s) => sum + s.price, 0);
+  currentPrice = (selectedVariant()?.price ?? selectedProduct.price) + (milk?.price || 0) + catalog.supplements.filter(s => selected.includes(s.id)).reduce((sum, s) => sum + s.price, 0);
   modalAdd.disabled = !milk || !!pendingOrder;
   modalAdd.textContent = `Добавить в корзину · ${currentPrice} ₽`;
 }
@@ -3956,7 +3962,7 @@ modalAdd.onclick = () => {
   const milk = catalog.milk.find(m => m.id === document.querySelector('input[name="milk"]:checked')?.value);
   if (!milk) return;
   const ids = [...document.querySelectorAll('.supplement:checked')].map(el => el.value);
-  cartItems.push({ product_id: selectedProduct.id, name: selectedProduct.name, milk_id: milk.id, milk: milk.name, supplement_ids: ids, supplements: catalog.supplements.filter(s => ids.includes(s.id)).map(s => s.name), price: currentPrice, quantity: 1 });
+  cartItems.push({ product_id: selectedProduct.id, variant_id: selectedVariant()?.id, volume: selectedVariant()?.volume || selectedProduct.volume, name: selectedProduct.name, milk_id: milk.id, milk: milk.name, supplement_ids: ids, supplements: catalog.supplements.filter(s => ids.includes(s.id)).map(s => s.name), price: currentPrice, quantity: 1 });
   closeModal(); updateCart();
 };
 document.getElementById('cart').onclick = openCart;
@@ -3982,11 +3988,11 @@ async function submitOrder() {
     const pickup = document.querySelector('input[name="pickup"]:checked')?.value;
     if (!pickup) return alert('Выберите, где вы заберёте заказ');
     const total = totalOf(cartItems);
-    const lines = cartItems.map(i => `${i.name} × ${i.quantity}\nМолоко: ${i.milk}\nДобавки: ${i.supplements.join(', ') || 'Без БАДов'}`).join('\n\n');
+    const lines = cartItems.map(i => `${i.name}${i.volume ? ` · ${i.volume}` : ''} × ${i.quantity}\nМолоко: ${i.milk}\nДобавки: ${i.supplements.join(', ') || 'Без добавок'}`).join('\n\n');
     if (!confirm(`Ваш заказ:\n\n${lines}\n\n📍 Получение: ${pickup}\n⏱ Будем готовить до 10 минут\n\nИтого: ${total} ₽\n\nОформить заказ?`)) return;
     const user = tg?.initDataUnsafe?.user;
     const order = { order_id: crypto.randomUUID(), catalog_version: catalog.version,
-      items: cartItems.map(i => ({ product_id:i.product_id, milk_id:i.milk_id, supplement_ids:[...i.supplement_ids], quantity:i.quantity, price:i.price })),
+      items: cartItems.map(i => ({ product_id:i.product_id, variant_id:i.variant_id, milk_id:i.milk_id, supplement_ids:[...i.supplement_ids], quantity:i.quantity, price:i.price })),
       total, pickup, user_id:user?.id || null, user_name:user?.first_name || '', username:user?.username || '' };
     try { persistPending(order); } catch {
       return alert('Не удалось сохранить заказ на устройстве. Отправка не выполнялась. Проверьте доступ к хранилищу приложения.');
@@ -4029,9 +4035,10 @@ async function loadCatalog() {
     catalog = data.catalog;
     products = catalog.products.filter(p => p.available !== false);
     productsEl.innerHTML = products.map((p, index) => `
+      ${index === 0 || p.category !== products[index-1].category ? `<div class="menu-heading" style="grid-column:1/-1"><h2>${p.category === 'classic' ? 'Классические напитки' : 'Авторские коктейли'}</h2></div>` : ''}
       <article class="product"><img class="product-image" src="${esc(p.image)}" alt="${esc(p.name)}">
-      <div class="product-body"><div class="product-title">${esc(p.name)}</div><div class="product-info">Протеиновый · ${esc(p.volume)}</div>
-      <div class="product-bottom"><div class="price">${p.price} ₽</div><button class="add-button" data-index="${index}">Выбрать</button></div></div></article>`).join('');
+      <div class="product-body"><div class="product-title">${esc(p.name)}</div><div class="product-info">${p.category === 'classic' ? '' : 'Протеиновый · '}${esc(p.volume)}</div>
+      <div class="product-bottom"><div class="price">${p.variants?.length > 1 ? 'от ' : ''}${p.price} ₽</div><button class="add-button" data-index="${index}">Выбрать</button></div></div></article>`).join('');
     productsEl.querySelectorAll('.add-button').forEach(button => button.onclick = () => openProduct(Number(button.dataset.index)));
     document.getElementById('pickupOptions').innerHTML = catalog.pickup.map((p,i) => `<label class="option"><span class="option-left"><input type="radio" name="pickup" value="${esc(p)}">${i === 0 ? '🏋️' : '🛎️'} ${esc(p)}</span></label>`).join('');
     if (pendingOrder) document.querySelectorAll('input[name="pickup"]').forEach(el => { el.checked = el.value === pendingOrder.pickup; });
@@ -4064,7 +4071,7 @@ function historyCard(order) {
   const status = order.preparation_status === 'ready' ? '✅ Готов' : order.status === 'sent' ? 'Готовится' : order.status === 'failed' ? 'Не отправлен' : 'Доставка уточняется';
   const date = new Date(order.created_at).toLocaleString('ru-RU', {timeZone:'Europe/Moscow',day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
   return `<article class="history-card"><div class="history-top"><div><div class="history-number">Заказ ${order.order_number ? '№'+esc(order.order_number) : ''}</div><div class="history-date">${esc(date)} · МСК</div></div><span class="history-status ${order.status === 'sent' ? '' : 'pending'}">${status}</span></div>
-    ${order.items.map(item=>`<div class="history-item"><div class="history-item-head"><strong>${esc(item.name)} × ${esc(item.quantity)}</strong><span>${money(item.price*item.quantity)}</span></div><div class="history-item-options">${esc(item.milk)}<br>${esc(item.supplements.join(', ') || 'Без добавок')}</div></div>`).join('')}
+    ${order.items.map(item=>`<div class="history-item"><div class="history-item-head"><strong>${esc(item.name)}${item.volume ? ` · ${esc(item.volume)}` : ''} × ${esc(item.quantity)}</strong><span>${money(item.price*item.quantity)}</span></div><div class="history-item-options">${esc(item.milk)}<br>${esc(item.supplements.join(', ') || 'Без добавок')}</div></div>`).join('')}
     <div class="history-total"><span>Итого</span><strong>${money(order.total)}</strong></div><div class="history-pickup">${esc(order.pickup)}</div></article>`;
 }
 function historyState(title, description) {
@@ -4167,6 +4174,7 @@ renderNotify();
 
 // Warm the private history only within this authenticated page session.
 setTimeout(() => { if (tg?.initData && !historyHasSnapshot && !historyLoading) loadHistory(true); }, 600);
+
 </script>
 
 </body>
