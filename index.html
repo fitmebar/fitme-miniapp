@@ -3920,6 +3920,24 @@ let currentPrice = 0;
 let cartItems = [];
 let orderIsSending = false;
 let pendingOrder = null;
+let firstEligible=false,firstLoaded=false;
+const promoBanner=document.createElement('div');promoBanner.hidden=true;
+promoBanner.style.cssText='background:#eff9df;border-radius:20px;padding:20px;margin:16px;font-size:16px;line-height:1.5';
+document.getElementById('menuView').prepend(promoBanner);
+const promoApplies=()=>pendingOrder?pendingOrder.first_drink===true:firstEligible;
+const promoIndex=()=>cartItems.length?cartItems.reduce((best,item,i)=>item.price>cartItems[best].price?i:best,0):-1;
+const cartPayable=()=>totalOf(cartItems)-(promoApplies()&&cartItems.length?cartItems[promoIndex()].price-1:0);
+async function loadFirstDrink(){
+ if(!tg?.initData){firstLoaded=true;return;}
+ try{
+  const {response,data}=await readApiJson(API+'promotions/first-drink',{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
+  if(!response.ok||typeof data.eligible!=='boolean')throw new Error();
+  firstEligible=data.eligible;firstLoaded=true;promoBanner.hidden=!data.eligible&&!data.reserved;
+  promoBanner.textContent=data.eligible?'Первый напиток — 1 ₽ 💚 Любой объём, молоко и добавки включены. В корзине скидку получит один самый дорогой напиток; остальные — по прайсу.':data.reserved?'Скидка на первый напиток закреплена за прежним неоплаченным счётом. После его отмены ЮKassa она снова станет доступна. Новые заказы пока — по прайсу.':'';
+  if(catalog){const pickup=document.querySelector('input[name="pickup"]:checked')?.value;renderCatalog(catalog);document.querySelectorAll('input[name="pickup"]').forEach(el=>el.checked=el.value===pickup);}
+  updateCart();renderCart();if(selectedProduct)calculatePrice();
+ }catch{promoBanner.hidden=false;promoBanner.textContent='Не удалось проверить скидку на первый напиток. Повторим проверку перед оплатой.';}
+}
 const PENDING_KEY = 'fitme.pending-order.v3.' + (tg?.initDataUnsafe?.user?.id || 'guest');
 const authHeaders = () => ({'Content-Type':'application/json', 'Authorization':'tma ' + (tg?.initData || '')});
 const productsEl = document.getElementById('products');
@@ -3945,7 +3963,7 @@ function lockCart() {
 function updateCart() {
   document.body.classList.toggle('has-cart', cartItems.length > 0);
   document.getElementById('cartCount').textContent = `Корзина · ${cartItems.reduce((sum, item) => sum + item.quantity, 0)}`;
-  document.getElementById('cartTotal').textContent = `${totalOf(cartItems)} ₽ →`;
+  document.getElementById('cartTotal').textContent = `${cartPayable()} ₽ →`;
   document.getElementById('cart').style.display = cartItems.length ? 'flex' : 'none';
   lockCart();
 }
@@ -3961,10 +3979,10 @@ function renderCart() {
       <div class="cart-item-bottom"><div class="cart-quantity">
         <button class="qty-button" data-index="${index}" data-delta="-1">−</button>
         <strong>${item.quantity}</strong><button class="qty-button" data-index="${index}" data-delta="1">+</button>
-      </div><div class="cart-item-price">${item.price * item.quantity} ₽</div></div>
+      </div><div class="cart-item-price">${promoApplies()&&index===promoIndex()?`<s>${item.price*item.quantity} ₽</s><br>${1+item.price*(item.quantity-1)} ₽<small style="display:block">Один напиток за 1 ₽</small>`:`${item.price*item.quantity} ₽`}</div></div>
     </div>`).join('');
   box.querySelectorAll('.qty-button').forEach(button => button.onclick = () => changeQty(Number(button.dataset.index), Number(button.dataset.delta)));
-  document.getElementById('cartGrandTotal').textContent = `${totalOf(cartItems)} ₽`;
+  document.getElementById('cartGrandTotal').textContent = `${cartPayable()} ₽`;
   lockCart();
   if (!cartItems.length) closeCart();
 }
@@ -4020,9 +4038,9 @@ function calculatePrice() {
   currentPrice = (selectedVariant()?.price ?? selectedProduct.price) + (milk?.price || 0) + catalog.supplements.filter(s => selected.includes(s.id)).reduce((sum, s) => sum + s.price, 0);
   modalAdd.disabled = !milk || !!pendingOrder || (selectedProduct.variants && !selectedVariant());
   document.getElementById('proteinNext').disabled = !selectedVariant();
-  document.getElementById('proteinTotal').textContent = `${currentPrice} ₽`;
+  document.getElementById('proteinTotal').textContent = `${firstEligible?1:currentPrice} ₽`;
   document.getElementById('proteinSummary').textContent = selectedProduct.variant_kind === 'flavor' ? [selectedVariant()?.name,milk?.name,selected.length ? `Добавок: ${selected.length}` : ''].filter(Boolean).join(' · ') : ''; 
-  modalAdd.textContent = `Добавить в корзину · ${currentPrice} ₽`;
+  modalAdd.textContent = `Добавить в корзину · ${firstEligible?"1 ₽ по акции":currentPrice+" ₽"}`;
 }
 modalAdd.onclick = () => {
   if (pendingOrder || orderIsSending || !selectedProduct) return;
@@ -4096,11 +4114,11 @@ cancelPaymentButton.onclick=async()=>{
     const id=pendingOrder.order_id;
     const {response,data}=await paymentCall('cancel',{order_id:id});
     if(!response.ok || !data.ok || data.order_id!==id)throw new Error('Unverified payment');
-    if(data.payment_status==='canceled'){clearPending();orderNotice('Заказ можно изменить.');}
+    if(data.payment_status==='canceled'){clearPending();void loadFirstDrink();orderNotice('Заказ можно изменить.');}
     else if(data.payment_status==='awaiting' && data.checkout_url){
       if(!confirm('Вернуться к выбору напитков?\n\nЗакройте старую страницу оплаты и больше не оплачивайте её. Ссылка ещё действует: если оплатить старый счёт, в работу поступит прежний заказ.'))return;
       saveDetached(id); // Keep reconciliation durable BEFORE unlocking the cart.
-      clearPending();closeCart();renderDetached();
+      clearPending();firstEligible=false;void loadFirstDrink();closeCart();renderDetached();
     }else await showPaymentState(data);
   }catch{orderNotice('Не удалось проверить оплату. Состав сохранён. Попробуйте ещё раз.');}
   finally{orderIsSending=false;updateCart();renderCart();}
@@ -4125,7 +4143,7 @@ async function checkDetached(){
    try{
     const {response,data}=await paymentCall('status',{order_id:id});
     if(!response.ok||!data.ok||data.order_id!==id)continue;
-    if(data.payment_status==='canceled')writeDetached(detached.filter(x=>x!==id));
+    if(data.payment_status==='canceled'){writeDetached(detached.filter(x=>x!==id));void loadFirstDrink();}
     else if(data.payment_status==='paid'||data.payment_status==='legacy'){
      historyHasSnapshot=false;
      if(data.delivery_status==='sent'){
@@ -4145,7 +4163,7 @@ async function showPaymentState(result){
   if(!pendingOrder || result.order_id!==pendingOrder.order_id)return;
   if((result.payment_status==='paid'||result.payment_status==='legacy')&&result.delivery_status==='sent'){
     const pickup=pendingOrder.pickup;
-    clearPending();cartItems=[];historyHasSnapshot=false;
+    clearPending();cartItems=[];historyHasSnapshot=false;firstEligible=false;void loadFirstDrink();
     document.querySelectorAll('input[name="pickup"]').forEach(el=>el.checked=false);
     closeCart();updateCart();renderCart();
     alert(`Заказ принят ✅\n${result.order_number?'№'+result.order_number+'\n':''}📍 ${pickup}\nСообщим, когда будет готово.`);
@@ -4156,7 +4174,7 @@ async function showPaymentState(result){
   }else if(result.payment_status==='checking'){
     orderNotice('Ожидаем подтверждение платежа. Не оплачивайте повторно. Если банк отклонил платёж или деньги списаны, а статус не меняется — обратитесь к сотруднику для проверки.');
   }else if(result.payment_status==='canceled'){
-    clearPending();orderNotice('Оплата отменена. Заказ сотрудникам не отправлен.');
+    clearPending();void loadFirstDrink();orderNotice('Оплата отменена. Заказ сотрудникам не отправлен.');
   }else if(!result.ok){
     orderNotice(result.error||'Не удалось проверить оплату. Попробуйте ещё раз.');
   }
@@ -4190,13 +4208,15 @@ async function submitOrder(){
   if(orderIsSending || !cartItems.length)return;
   if(!tg?.initData)return alert('Откройте меню через бота FitMe в Telegram.');
   if(!pendingOrder){
+    if(!firstLoaded){await loadFirstDrink();if(!firstLoaded)return alert("Не удалось проверить скидку. Попробуйте ещё раз.");}
     if(!catalog)return;
     const pickup=document.querySelector('input[name="pickup"]:checked')?.value;
     if(!pickup)return alert('Выберите место получения');
     const total=totalOf(cartItems);
-    if(!confirm(`Оплатить заказ на ${total} ₽?\n\n${pickup}\nНачнём приготовление после подтверждения оплаты.`))return;
+    const payable=cartPayable();
+    if(!confirm(`Оплатить заказ на ${payable} ₽?\n\n${pickup}\nНачнём приготовление после подтверждения оплаты.`))return;
     const order={order_id:crypto.randomUUID(),catalog_version:catalog.version,
-      items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup};
+      items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup,...(firstEligible?{first_drink:true}:{})};
     try{persistPending(order);}catch{return alert('Не удалось сохранить заказ. Оплата не открывалась.');}
   }
   const emailInput=document.getElementById('receiptEmail');
@@ -4214,6 +4234,8 @@ async function submitOrder(){
     if(response.ok && data.payment_status==='awaiting' && data.checkout_url){
       orderNotice('Откроется ЮKassa. Выберите удобный способ оплаты, затем вернитесь в бот. Заказ поступит сотрудникам только после оплаты.');
       await openPayment(data.checkout_url);
+    }else if(data.code==='PROMO_CHANGED'){
+      clearPending();firstLoaded=false;await loadFirstDrink();alert(data.error);
     }else if(data.code==='EMAIL_REQUIRED'){
       receiptField.hidden=false;document.getElementById('receiptEmail').focus();orderNotice(data.error);
     }else if(['CATALOG_CHANGED','PRICE_CHANGED','INVALID_ITEMS','INVALID_ITEM','INVALID_MODIFIER','INVALID_QUANTITY','INVALID_PICKUP','ORDER_TOO_LONG'].includes(data.code)){
@@ -4251,7 +4273,7 @@ function renderCatalog(next) {
       ${index === 0 || p.category !== products[index-1].category ? `<div class="menu-heading" style="grid-column:1/-1"><h2>${({lemonade:'Лимонады',protein:'Протеиновые шейки',classic:'Классические напитки',smoothie:'Смузи',signature:'Авторские протеиновые шейки',special:'Авторские напитки',preworkout:'Предтренировочный комплекс'}[p.category] || 'Напитки')}</h2></div>` : ''}
       <article class="product ${p.id === 'energy_guava' ? 'product-wide energy-card' : p.variant_kind === 'flavor' ? 'product-wide' : ''}">${p.id === 'energy_guava' ? `<div class="energy-art"><img class="product-image" src="images/energy-guava-handwritten.jpg" alt="${esc(p.name)} — Для взрывной силы"></div>` : `<img class="product-image" src="${esc(p.id === 'americano' ? 'images/classic-americano-aligned.jpg' : p.image)}" alt="${esc(p.name)}">`}
       <div class="product-body"><div class="product-title">${esc(p.name)}</div><div class="product-info">${p.category === 'signature' ? 'Протеиновый · ' : ''}${esc(p.volume)}${p.variant_kind === 'flavor' ? ' · 10 вкусов</div><div class="wide-caption">На воде — 410 ₽ · любое молоко +70 ₽<br>Собери свой шейк: вкус, основа и добавки.' : ''}</div>
-      <div class="product-bottom"><div class="price">${p.variants?.length > 1 ? 'от ' : ''}${p.price} ₽</div><button class="add-button" data-index="${index}">Выбрать</button></div></div></article>`).join('');
+      <div class="product-bottom"><div class="price">${firstEligible?`<s style="font-size:14px;color:#888">${p.price} ₽</s><br>1 ₽`:`${p.variants?.length>1?'от ':''}${p.price} ₽`}</div><button class="add-button" data-index="${index}">Выбрать</button></div></div></article>`).join('');
     productsEl.querySelectorAll('.add-button').forEach(button => button.onclick = () => openProduct(Number(button.dataset.index)));
     document.getElementById('pickupOptions').innerHTML = catalog.pickup.map((p,i) => `<label class="option"><span class="option-left"><input type="radio" name="pickup" value="${esc(p)}">${i === 0 ? '🏋️' : '🛎️'} ${esc(p)}</span></label>`).join('');
     if (pendingOrder) document.querySelectorAll('input[name="pickup"]').forEach(el => { el.checked = el.value === pendingOrder.pickup; });
@@ -4401,6 +4423,8 @@ renderNotify();
 setTimeout(() => { if (tg?.initData && !historyHasSnapshot && !historyLoading) loadHistory(true); }, 600);
 
 setTimeout(checkDetached,1000);
+
+void loadFirstDrink();
 </script>
 
 </body>
