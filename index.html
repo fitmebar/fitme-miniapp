@@ -3656,6 +3656,7 @@ input {
 .energy-art{height:260px;position:relative;overflow:hidden;background:#fff;border-radius:20px 20px 0 0}.energy-card .energy-art .product-image{width:100%;height:100%;margin:0 auto;display:block;object-fit:contain;padding:0}.energy-card .product-title{font-size:23px;line-height:1.2}.energy-card .product-bottom{margin-top:18px}.energy-card .add-button{min-width:108px;padding:14px;font-size:13px}.energy-card .price{font-size:24px}
 
 .product-image[src$="pina_colada.jpg"]{transform:scale(.84)}
+.product:has(.add-button:not(:disabled)) { cursor: pointer; }
 </style>
 
 <style>
@@ -4317,6 +4318,13 @@ function renderCatalog(next) {
       <div class="product-body"><div class="product-title">${esc(p.name)}</div><div class="product-info">${p.category === 'signature' ? 'Протеиновый · ' : ''}${esc(p.volume)}${p.variant_kind === 'flavor' ? ' · 10 вкусов</div><div class="wide-caption">На воде — 410 ₽ · любое молоко +70 ₽<br>Собери свой шейк: вкус, основа и добавки.' : ''}</div>
       <div class="product-bottom"><div class="price">${firstEligible?`<s style="font-size:14px;color:#888">${p.price} ₽</s><br>1 ₽`:`${p.variants?.length>1?'от ':''}${p.price} ₽`}</div><button class="add-button" data-index="${index}" data-unavailable="${p.available===false}" ${p.available===false?'disabled style="background:#eef0e9;color:#7b8175"':''}>${p.available===false?'Временно нет':'Выбрать'}</button></div></div></article>`).join('');
     productsEl.querySelectorAll('.add-button').forEach(button => button.onclick = () => openProduct(Number(button.dataset.index)));
+    productsEl.querySelectorAll('.product').forEach(card => {
+      card.onclick = event => {
+        if (event.target.closest('button')) return;
+        const button = card.querySelector('.add-button');
+        if (button && !button.disabled) button.click();
+      };
+    });
     document.getElementById('pickupOptions').innerHTML = catalog.pickup.map((p,i) => `<label class="option"><span class="option-left"><input type="radio" name="pickup" value="${esc(p)}">${i === 0 ? '🏋️' : '🛎️'} ${esc(p)}</span></label>`).join('');
     document.querySelectorAll('input[name="pickup"]').forEach(el => { el.checked = el.value === (pendingOrder?.pickup||previousPickup); });
   lockCart();
@@ -4477,7 +4485,6 @@ void loadFirstDrink();
 window.addEventListener("focus",()=>{void loadCatalog();});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)void loadCatalog();});
 setInterval(()=>{if(!document.hidden)void loadCatalog();},30000);
-
 </script>
 
 </body>
