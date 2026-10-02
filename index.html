@@ -3952,8 +3952,8 @@ const checkoutButton = document.getElementById('checkoutButton');
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const totalOf = items => items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 const selectedVariant = () => selectedProduct?.variants?.find(v => v.id === document.querySelector('input[name="volume"]:checked')?.value);
-const allowedMilk = product => (product.milk_ids ? product.milk_ids.map(id => catalog.milk.find(m => m.id === id)) : catalog.milk).filter(m => m && m.available !== false);
-const allowedSupplements = product => catalog.supplements.filter(s => s.available !== false && (!product.supplement_ids || product.supplement_ids.includes(s.id)));
+const allowedMilk = product => (product.milk_ids ? product.milk_ids.map(id => catalog.milk.find(m => m.id === id)) : catalog.milk).filter(Boolean);
+const allowedSupplements = product => catalog.supplements.filter(s => !product.supplement_ids || product.supplement_ids.includes(s.id));
 
 const commentBlock=document.createElement('div');
 commentBlock.style.cssText='margin:22px 0 0';
@@ -3963,7 +3963,7 @@ const orderCommentInput=document.getElementById('orderComment');
 
 function lockCart() {
   const locked = !!pendingOrder || orderIsSending;
-  document.querySelectorAll('.qty-button, input[name="pickup"], .add-button, #modalAdd').forEach(el => { el.disabled = locked; });
+  document.querySelectorAll('.qty-button, input[name="pickup"], .add-button, #modalAdd').forEach(el => { el.disabled = locked || el.dataset.unavailable === "true"; });
   orderCommentInput.readOnly = locked;
   checkoutButton.disabled = orderIsSending || (!pendingOrder && !catalog);
   checkoutButton.textContent = orderIsSending ? 'Проверяем…' : !receiptField.hidden ? 'Перейти к оплате' : pendingOrder ? 'Продолжить / проверить оплату' : 'Оплатить заказ';
@@ -3981,7 +3981,21 @@ function updateCart() {
 function closeModal() { modal.style.display = 'none'; }
 function closeCart() { document.getElementById('cartModal').style.display = 'none'; }
 function openCart() { renderCart(); document.getElementById('cartModal').style.display = 'flex'; }
+function cartUnavailable(){
+ if(pendingOrder||!catalog)return '';
+ for(const item of cartItems){
+  const p=catalog.products.find(p=>p.id===item.product_id);
+  if(!p||p.available===false)return `${item.name} — временно нет.`;
+  const m=catalog.milk.find(m=>m.id===item.milk_id);
+  if(!m||m.available===false)return `${item.name}: выбранное молоко закончилось.`;
+  if(item.supplement_ids.some(id=>catalog.supplements.find(s=>s.id===id)?.available===false))return `${item.name}: выбранная добавка закончилась.`;
+ }
+ return '';
+}
+const stockNotice=document.createElement('p');stockNotice.hidden=true;stockNotice.style.cssText='padding:14px;background:#fff3cd;border-radius:14px;line-height:1.45';
+document.getElementById('cartItems').after(stockNotice);
 function renderCart() {
+  const unavailable=cartUnavailable();stockNotice.hidden=!unavailable;stockNotice.textContent=unavailable?unavailable+' Уберите позицию и выберите замену.':'';
   const box = document.getElementById('cartItems');
   box.innerHTML = cartItems.map((item, index) => `
     <div class="cart-item">
@@ -4025,6 +4039,7 @@ document.getElementById('proteinBack').onclick=()=>{proteinStep=Math.max(0,prote
 function openProduct(index) {
   if (pendingOrder || orderIsSending || !catalog) return;
   selectedProduct = products[index];
+  if(selectedProduct.available===false)return;
   proteinStep = 0;
   modalTitle.textContent = selectedProduct.name;
   document.getElementById('modalInfo').textContent = `${selectedProduct.volume} · ${selectedProduct.variants?.length > 1 ? 'от ' : ''}${selectedProduct.price} ₽${selectedProduct.description ? '\nСостав: '+selectedProduct.description : ''}`;
@@ -4033,12 +4048,12 @@ function openProduct(index) {
   document.getElementById('milkBlock').hidden = !selectedProduct.fixed_milk_names && allowedMilk(selectedProduct).length < 2;
   document.getElementById('supplementBlock').hidden = !allowedSupplements(selectedProduct).length;
   document.getElementById('milkOptions').innerHTML = allowedMilk(selectedProduct).map((milk, i) => `
-    <label class="option"><span class="option-left"><input type="radio" name="milk" value="${esc(milk.id)}" ${i === 0 ? 'checked' : ''}>${esc(milk.name)}</span><span>${milk.price ? '+' + milk.price + ' ₽' : 'включено'}</span></label>`).join('');
+    <label class="option"><span class="option-left"><input type="radio" name="milk" value="${esc(milk.id)}" ${milk.available===false?'disabled':allowedMilk(selectedProduct).find(m=>m.available!==false)?.id===milk.id?'checked':''}>${esc(milk.name)}</span><span>${milk.available===false?'Временно нет':milk.price ? '+' + milk.price + ' ₽' : 'включено'}</span></label>`).join('');
   if(selectedProduct.fixed_milk_names){
     document.getElementById('milkOptions').innerHTML = `<input type="radio" name="milk" value="${esc(selectedProduct.milk_ids[0])}" checked hidden>` + selectedProduct.fixed_milk_names.map(name=>`<label class="option"><span class="option-left"><input type="checkbox" checked disabled>${esc(name)}</span><span>в составе</span></label>`).join('');
   }
   document.getElementById('supplementOptions').innerHTML = allowedSupplements(selectedProduct).map(s => `
-    <label class="option"><span class="option-left"><input class="supplement" type="checkbox" value="${esc(s.id)}">${esc(s.name)}</span><span>+${s.price} ₽</span></label>`).join('');
+    <label class="option"><span class="option-left"><input class="supplement" type="checkbox" value="${esc(s.id)}" ${s.available===false?"disabled":""}>${esc(s.name)}</span><span>${s.available===false?"Временно нет":"+"+s.price+" ₽"}</span></label>`).join('');
   document.querySelectorAll('input[name="milk"], input[name="volume"], .supplement').forEach(el => el.onchange = calculatePrice);
   document.getElementById('volumeBlock').querySelector('.section-title').textContent = selectedProduct.variant_kind === 'flavor' ? '1. Выберите вкус' : 'Объём';
   document.getElementById('milkBlock').querySelector('.section-title').textContent = selectedProduct.fixed_milk_names ? 'Молоко в составе · без замены' : selectedProduct.variant_kind === 'flavor' ? '2. Выберите основу' : 'Выберите молоко';
@@ -4050,7 +4065,7 @@ function calculatePrice() {
   const milk = catalog.milk.find(m => m.id === document.querySelector('input[name="milk"]:checked')?.value);
   const selected = [...document.querySelectorAll('.supplement:checked')].map(el => el.value);
   currentPrice = (selectedVariant()?.price ?? selectedProduct.price) + (milk?.price || 0) + catalog.supplements.filter(s => selected.includes(s.id)).reduce((sum, s) => sum + s.price, 0);
-  modalAdd.disabled = !milk || !!pendingOrder || (selectedProduct.variants && !selectedVariant());
+  modalAdd.disabled = !milk || milk.available===false || !!pendingOrder || (selectedProduct.variants && !selectedVariant());
   document.getElementById('proteinNext').disabled = !selectedVariant();
   document.getElementById('proteinTotal').textContent = `${firstEligible?1:currentPrice} ₽`;
   document.getElementById('proteinSummary').textContent = selectedProduct.variant_kind === 'flavor' ? [selectedVariant()?.name,milk?.name,selected.length ? `Добавок: ${selected.length}` : ''].filter(Boolean).join(' · ') : ''; 
@@ -4060,7 +4075,7 @@ modalAdd.onclick = () => {
   if (pendingOrder || orderIsSending || !selectedProduct) return;
   if (cartItems.length >= 15 || cartItems.reduce((sum, item) => sum + item.quantity, 0) >= 20) return alert('За один заказ: до 15 позиций и до 20 напитков.');
   const milk = catalog.milk.find(m => m.id === document.querySelector('input[name="milk"]:checked')?.value);
-  if (!milk || (selectedProduct.variants && !selectedVariant()) || (selectedProduct.variant_kind === 'flavor' && proteinStep !== 2)) return;
+  if (!milk || milk.available===false || selectedProduct.available===false || (selectedProduct.variants && !selectedVariant()) || (selectedProduct.variant_kind === 'flavor' && proteinStep !== 2)) return;
   const ids = [...document.querySelectorAll('.supplement:checked')].map(el => el.value);
   cartItems.push({ product_id: selectedProduct.id, variant_id: selectedVariant()?.id, volume: selectedVariant()?.volume || selectedProduct.volume, name: selectedProduct.variant_kind === 'flavor' ? `Протеиновый шейк · ${selectedVariant().name}` : selectedProduct.name, milk_id: milk.id, milk: milk.name, supplement_ids: ids, supplements: catalog.supplements.filter(s => ids.includes(s.id)).map(s => s.name), price: currentPrice, quantity: 1 });
   closeModal(); updateCart();
@@ -4231,6 +4246,7 @@ async function submitOrder(){
   if(!pendingOrder){
     if(!firstLoaded){await loadFirstDrink();if(!firstLoaded)return alert("Не удалось проверить скидку. Попробуйте ещё раз.");}
     if(!catalog)return;
+    const unavailable=cartUnavailable();if(unavailable)return alert(unavailable+' Уберите позицию из корзины и выберите замену.');
     const pickup=document.querySelector('input[name="pickup"]:checked')?.value;
     if(!pickup)return alert('Выберите место получения');
     const total=totalOf(cartItems);
@@ -4259,6 +4275,8 @@ async function submitOrder(){
       clearPending();firstLoaded=false;await loadFirstDrink();alert(data.error);
     }else if(data.code==='EMAIL_REQUIRED'){
       receiptField.hidden=false;document.getElementById('receiptEmail').focus();orderNotice(data.error);
+    }else if(data.code==='ITEM_UNAVAILABLE'){
+      clearPending();await loadCatalog();alert(data.error);renderCart();
     }else if(data.code==='INVALID_COMMENT'){
       clearPending();alert(data.error);orderCommentInput.focus();
     }else if(['CATALOG_CHANGED','PRICE_CHANGED','INVALID_ITEMS','INVALID_ITEM','INVALID_MODIFIER','INVALID_QUANTITY','INVALID_PICKUP','ORDER_TOO_LONG'].includes(data.code)){
@@ -4290,16 +4308,17 @@ async function readApiJson(url, options, timeoutMs) {
   } finally { clearTimeout(timer); }
 }
 function renderCatalog(next) {
+  const previousPickup=document.querySelector('input[name="pickup"]:checked')?.value;
   catalog = next;
-    products = catalog.products.filter(p => p.available !== false);
+    products = catalog.products;
     productsEl.innerHTML = products.map((p, index) => `
       ${index === 0 || p.category !== products[index-1].category ? `<div class="menu-heading" style="grid-column:1/-1"><h2>${({lemonade:'Лимонады',protein:'Протеиновые шейки',classic:'Классические напитки',smoothie:'Смузи',signature:'Авторские протеиновые шейки',special:'Авторские напитки',preworkout:'Предтренировочный комплекс'}[p.category] || 'Напитки')}</h2></div>` : ''}
       <article class="product ${p.id === 'energy_guava' ? 'product-wide energy-card' : p.variant_kind === 'flavor' ? 'product-wide' : ''}">${p.id === 'energy_guava' ? `<div class="energy-art"><img class="product-image" src="images/energy-guava-handwritten.jpg" alt="${esc(p.name)} — Для взрывной силы"></div>` : `<img class="product-image" src="${esc(['americano','cocoa','espresso'].includes(p.id) ? 'images/classic-'+p.id+'-aligned.jpg' : p.image)}" alt="${esc(p.name)}">`}
       <div class="product-body"><div class="product-title">${esc(p.name)}</div><div class="product-info">${p.category === 'signature' ? 'Протеиновый · ' : ''}${esc(p.volume)}${p.variant_kind === 'flavor' ? ' · 10 вкусов</div><div class="wide-caption">На воде — 410 ₽ · любое молоко +70 ₽<br>Собери свой шейк: вкус, основа и добавки.' : ''}</div>
-      <div class="product-bottom"><div class="price">${firstEligible?`<s style="font-size:14px;color:#888">${p.price} ₽</s><br>1 ₽`:`${p.variants?.length>1?'от ':''}${p.price} ₽`}</div><button class="add-button" data-index="${index}">Выбрать</button></div></div></article>`).join('');
+      <div class="product-bottom"><div class="price">${firstEligible?`<s style="font-size:14px;color:#888">${p.price} ₽</s><br>1 ₽`:`${p.variants?.length>1?'от ':''}${p.price} ₽`}</div><button class="add-button" data-index="${index}" data-unavailable="${p.available===false}" ${p.available===false?'disabled style="background:#eef0e9;color:#7b8175"':''}>${p.available===false?'Временно нет':'Выбрать'}</button></div></div></article>`).join('');
     productsEl.querySelectorAll('.add-button').forEach(button => button.onclick = () => openProduct(Number(button.dataset.index)));
     document.getElementById('pickupOptions').innerHTML = catalog.pickup.map((p,i) => `<label class="option"><span class="option-left"><input type="radio" name="pickup" value="${esc(p)}">${i === 0 ? '🏋️' : '🛎️'} ${esc(p)}</span></label>`).join('');
-    if (pendingOrder) document.querySelectorAll('input[name="pickup"]').forEach(el => { el.checked = el.value === pendingOrder.pickup; });
+    document.querySelectorAll('input[name="pickup"]').forEach(el => { el.checked = el.value === (pendingOrder?.pickup||previousPickup); });
   lockCart();
 }
 let catalogRefresh = null;
@@ -4312,7 +4331,12 @@ async function loadCatalog() {
       try {
         const {response,data} = await readApiJson(API+'catalog', {cache:'no-store'}, 4000);
         if (!response.ok || !data.ok || !Array.isArray(data.catalog?.products)) throw new Error('Menu unavailable');
-        if (data.catalog.version !== catalog.version && !cartItems.length && !pendingOrder && modal.style.display !== 'flex') renderCatalog(data.catalog);
+        const availability=c=>JSON.stringify([c.products.map(x=>x.available!==false),c.milk.map(x=>x.available!==false),c.supplements.map(x=>x.available!==false)]);
+        if(data.catalog.version===catalog.version&&availability(data.catalog)!==availability(catalog)){
+          const wasChoosing=modal.style.display==='flex';closeModal();selectedProduct=null;
+          renderCatalog(data.catalog);renderCart();
+          if(wasChoosing)alert('Доступность напитков обновилась. Проверьте состав и выберите напиток снова.');
+        }else if(data.catalog.version!==catalog.version&&!cartItems.length&&!pendingOrder&&modal.style.display!=='flex')renderCatalog(data.catalog);
         return;
       } catch { /* Keep the bundled menu usable while the API is unreachable. */ }
     }
@@ -4448,6 +4472,11 @@ setTimeout(() => { if (tg?.initData && !historyHasSnapshot && !historyLoading) l
 setTimeout(checkDetached,1000);
 
 void loadFirstDrink();
+
+// Refresh stock when returning to the app and while it remains visible.
+window.addEventListener("focus",()=>{void loadCatalog();});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)void loadCatalog();});
+setInterval(()=>{if(!document.hidden)void loadCatalog();},30000);
 
 </script>
 
