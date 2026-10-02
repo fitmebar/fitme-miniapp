@@ -3983,9 +3983,25 @@ function updateCart() {
   document.getElementById('cart').style.display = cartItems.length ? 'flex' : 'none';
   lockCart();
 }
-function closeModal() { modal.style.display = 'none'; }
-function closeCart() { document.getElementById('cartModal').style.display = 'none'; }
-function openCart() { renderCart(); document.getElementById('cartModal').style.display = 'flex'; }
+let sheetScrollLock=null;
+function syncSheetScrollLock() {
+  const visible=modal.style.display==='flex'||document.getElementById('cartModal').style.display==='flex';
+  if(visible&&!sheetScrollLock){
+    const body=document.body,root=document.documentElement;
+    sheetScrollLock={x:window.scrollX,y:window.scrollY,styles:{},overflow:root.style.overflow};
+    for(const key of ['position','top','left','width','overflow'])sheetScrollLock.styles[key]=body.style[key];
+    Object.assign(body.style,{position:'fixed',top:`-${sheetScrollLock.y}px`,left:`-${sheetScrollLock.x}px`,width:'100%',overflow:'hidden'});
+    root.style.overflow='hidden';
+  }else if(!visible&&sheetScrollLock){
+    const saved=sheetScrollLock;sheetScrollLock=null;
+    Object.assign(document.body.style,saved.styles);document.documentElement.style.overflow=saved.overflow;
+    const behavior=document.documentElement.style.scrollBehavior;document.documentElement.style.scrollBehavior='auto';
+    window.scrollTo(saved.x,saved.y);document.documentElement.style.scrollBehavior=behavior;
+  }
+}
+function closeModal() { modal.style.display = 'none'; syncSheetScrollLock(); }
+function closeCart() { document.getElementById('cartModal').style.display = 'none'; syncSheetScrollLock(); }
+function openCart() { renderCart(); document.getElementById('cartModal').style.display = 'flex'; syncSheetScrollLock(); }
 // A downward gesture at the top dismisses the sheet; other gestures keep native scrolling.
 function enableSheetSwipe(overlay, selector, close) {
   const sheet=overlay.querySelector(selector);
@@ -4104,7 +4120,7 @@ function openProduct(index) {
   document.getElementById('milkBlock').querySelector('.section-title').textContent = selectedProduct.fixed_milk_names ? 'Молоко в составе · без замены' : selectedProduct.variant_kind === 'flavor' ? '2. Выберите основу' : 'Выберите молоко';
   document.getElementById('supplementBlock').querySelector('.section-title').textContent = selectedProduct.variant_kind === 'flavor' ? '3. Добавки по желанию' : 'Добавки';
   document.getElementById('volumeOptions').classList.toggle('flavor-grid',selectedProduct.variant_kind === 'flavor');
-  calculatePrice(); renderProteinStep(); modal.style.display = 'flex';
+  calculatePrice(); renderProteinStep(); modal.style.display = 'flex'; syncSheetScrollLock();
 }
 function calculatePrice() {
   const milk = catalog.milk.find(m => m.id === document.querySelector('input[name="milk"]:checked')?.value);
