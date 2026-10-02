@@ -4115,6 +4115,16 @@ function openProduct(index) {
   }
   document.getElementById('supplementOptions').innerHTML = allowedSupplements(selectedProduct).map(s => `
     <label class="option"><span class="option-left"><input class="supplement" type="checkbox" value="${esc(s.id)}" ${s.available===false?"disabled":""}>${esc(s.name)}</span><span>${s.available===false?"Временно нет":"+"+s.price+" ₽"}</span></label>`).join('');
+  if(selectedProduct.category==='classic'){
+    const protein=document.querySelector('.supplement[value="protein"]');
+    if(protein){
+      const picker=document.createElement('div');picker.id='proteinFlavorPicker';picker.hidden=true;
+      picker.innerHTML='<div class="section-title" style="margin-top:12px">Выберите вкус протеина</div><div class="flavor-grid">'+catalog.products.find(p=>p.variant_kind==='flavor').variants.map(v=>`<label class="option"><span class="option-left"><input type="radio" name="proteinFlavor" value="${esc(v.id)}">${esc(v.name)}</span></label>`).join('')+'</div>';
+      protein.closest('label').after(picker);
+      protein.setAttribute('aria-controls','proteinFlavorPicker');protein.setAttribute('aria-expanded','false');
+      picker.querySelectorAll('input').forEach(input=>input.onchange=calculatePrice);
+    }
+  }
   document.querySelectorAll('input[name="milk"], input[name="volume"], .supplement').forEach(el => el.onchange = calculatePrice);
   document.getElementById('volumeBlock').querySelector('.section-title').textContent = selectedProduct.variant_kind === 'flavor' ? '1. Выберите вкус' : 'Объём';
   document.getElementById('milkBlock').querySelector('.section-title').textContent = selectedProduct.fixed_milk_names ? 'Молоко в составе · без замены' : selectedProduct.variant_kind === 'flavor' ? '2. Выберите основу' : 'Выберите молоко';
@@ -4125,8 +4135,12 @@ function openProduct(index) {
 function calculatePrice() {
   const milk = catalog.milk.find(m => m.id === document.querySelector('input[name="milk"]:checked')?.value);
   const selected = [...document.querySelectorAll('.supplement:checked')].map(el => el.value);
+  const protein=document.querySelector('.supplement[value="protein"]');
+  const picker=document.getElementById('proteinFlavorPicker');
+  if(picker){picker.hidden=!protein.checked;protein.setAttribute('aria-expanded',String(protein.checked));}
+  const needsFlavor=!!picker&&protein.checked&&!document.querySelector('input[name="proteinFlavor"]:checked');
   currentPrice = (selectedVariant()?.price ?? selectedProduct.price) + (milk?.price || 0) + catalog.supplements.filter(s => selected.includes(s.id)).reduce((sum, s) => sum + s.price, 0);
-  modalAdd.disabled = !milk || milk.available===false || !!pendingOrder || (selectedProduct.variants && !selectedVariant());
+  modalAdd.disabled = needsFlavor || !milk || milk.available===false || !!pendingOrder || (selectedProduct.variants && !selectedVariant());
   document.getElementById('proteinNext').disabled = !selectedVariant();
   document.getElementById('proteinTotal').textContent = `${firstEligible?1:currentPrice} ₽`;
   document.getElementById('proteinSummary').textContent = selectedProduct.variant_kind === 'flavor' ? [selectedVariant()?.name,milk?.name,selected.length ? `Добавок: ${selected.length}` : ''].filter(Boolean).join(' · ') : ''; 
@@ -4138,7 +4152,11 @@ modalAdd.onclick = () => {
   const milk = catalog.milk.find(m => m.id === document.querySelector('input[name="milk"]:checked')?.value);
   if (!milk || milk.available===false || selectedProduct.available===false || (selectedProduct.variants && !selectedVariant()) || (selectedProduct.variant_kind === 'flavor' && proteinStep !== 2)) return;
   const ids = [...document.querySelectorAll('.supplement:checked')].map(el => el.value);
-  cartItems.push({ product_id: selectedProduct.id, variant_id: selectedVariant()?.id, volume: selectedVariant()?.volume || selectedProduct.volume, name: selectedProduct.variant_kind === 'flavor' ? `Протеиновый шейк · ${selectedVariant().name}` : selectedProduct.name, milk_id: milk.id, milk: milk.name, supplement_ids: ids, supplements: catalog.supplements.filter(s => ids.includes(s.id)).map(s => s.name), price: currentPrice, quantity: 1 });
+  const flavorId=selectedProduct.category==='classic'&&ids.includes('protein')?document.querySelector('input[name="proteinFlavor"]:checked')?.value:undefined;
+  if(selectedProduct.category==='classic'&&ids.includes('protein')&&!flavorId)return;
+  const proteinFlavor=catalog.products.find(p=>p.variant_kind==='flavor')?.variants.find(v=>v.id===flavorId);
+
+  cartItems.push({ product_id: selectedProduct.id, variant_id: selectedVariant()?.id, volume: selectedVariant()?.volume || selectedProduct.volume, name: selectedProduct.variant_kind === 'flavor' ? `Протеиновый шейк · ${selectedVariant().name}` : selectedProduct.name, milk_id: milk.id, milk: milk.name, supplement_ids: ids, ...(flavorId?{protein_flavor_id:flavorId}:{}), supplements: catalog.supplements.filter(s => ids.includes(s.id)).map(s => s.id==='protein'&&proteinFlavor?`Протеин · ${proteinFlavor.name}`:s.name), price: currentPrice, quantity: 1 });
   closeModal(); updateCart();
 };
 document.getElementById('cart').onclick = openCart;
@@ -4314,7 +4332,7 @@ async function submitOrder(){
     const payable=cartPayable();
     if(!confirm(`Оплатить заказ на ${payable} ₽?\n\n${pickup}\nНачнём приготовление после подтверждения оплаты.`))return;
     const order={order_id:crypto.randomUUID(),catalog_version:catalog.version,
-      items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup,comment:orderCommentInput.value.trim(),...(firstEligible?{first_drink:true}:{})};
+      items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,...(i.protein_flavor_id?{protein_flavor_id:i.protein_flavor_id}:{}),milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup,comment:orderCommentInput.value.trim(),...(firstEligible?{first_drink:true}:{})};
     try{persistPending(order);}catch{return alert('Не удалось сохранить заказ. Оплата не открывалась.');}
   }
   const emailInput=document.getElementById('receiptEmail');
