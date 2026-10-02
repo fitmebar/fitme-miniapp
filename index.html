@@ -3955,9 +3955,16 @@ const selectedVariant = () => selectedProduct?.variants?.find(v => v.id === docu
 const allowedMilk = product => (product.milk_ids ? product.milk_ids.map(id => catalog.milk.find(m => m.id === id)) : catalog.milk).filter(m => m && m.available !== false);
 const allowedSupplements = product => catalog.supplements.filter(s => s.available !== false && (!product.supplement_ids || product.supplement_ids.includes(s.id)));
 
+const commentBlock=document.createElement('div');
+commentBlock.style.cssText='margin:22px 0 0';
+commentBlock.innerHTML='<label for="orderComment" style="display:block;font-size:18px;font-weight:800;margin-bottom:10px">Комментарий к заказу</label><textarea id="orderComment" maxlength="300" rows="2" placeholder="Например, без льда или не слишком горячий" aria-describedby="commentHint" style="display:block;box-sizing:border-box;width:100%;padding:14px;border:1px solid var(--line);border-radius:16px;font:inherit;font-size:16px;line-height:1.45;resize:vertical;background:#fff;color:var(--ink)"></textarea><p id="commentHint" style="font-size:12px;color:#81877b;margin:8px 0 0">Необязательно · до 300 символов. Бармен увидит ваш комментарий.</p>';
+document.getElementById('pickupOptions').after(commentBlock);
+const orderCommentInput=document.getElementById('orderComment');
+
 function lockCart() {
   const locked = !!pendingOrder || orderIsSending;
   document.querySelectorAll('.qty-button, input[name="pickup"], .add-button, #modalAdd').forEach(el => { el.disabled = locked; });
+  orderCommentInput.readOnly = locked;
   checkoutButton.disabled = orderIsSending || (!pendingOrder && !catalog);
   checkoutButton.textContent = orderIsSending ? 'Проверяем…' : !receiptField.hidden ? 'Перейти к оплате' : pendingOrder ? 'Продолжить / проверить оплату' : 'Оплатить заказ';
   document.getElementById('pendingNotice').hidden = !pendingOrder;
@@ -4174,7 +4181,7 @@ async function showPaymentState(result){
   if(!pendingOrder || result.order_id!==pendingOrder.order_id)return;
   if((result.payment_status==='paid'||result.payment_status==='legacy')&&result.delivery_status==='sent'){
     const pickup=pendingOrder.pickup;
-    clearPending();cartItems=[];historyHasSnapshot=false;firstEligible=false;void loadFirstDrink();
+    clearPending();cartItems=[];orderCommentInput.value='';historyHasSnapshot=false;firstEligible=false;void loadFirstDrink();
     document.querySelectorAll('input[name="pickup"]').forEach(el=>el.checked=false);
     closeCart();updateCart();renderCart();
     alert(`Заказ принят ✅\n${result.order_number?'№'+result.order_number+'\n':''}📍 ${pickup}\nСообщим, когда будет готово.`);
@@ -4230,7 +4237,7 @@ async function submitOrder(){
     const payable=cartPayable();
     if(!confirm(`Оплатить заказ на ${payable} ₽?\n\n${pickup}\nНачнём приготовление после подтверждения оплаты.`))return;
     const order={order_id:crypto.randomUUID(),catalog_version:catalog.version,
-      items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup,...(firstEligible?{first_drink:true}:{})};
+      items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup,comment:orderCommentInput.value.trim(),...(firstEligible?{first_drink:true}:{})};
     try{persistPending(order);}catch{return alert('Не удалось сохранить заказ. Оплата не открывалась.');}
   }
   const emailInput=document.getElementById('receiptEmail');
@@ -4252,6 +4259,8 @@ async function submitOrder(){
       clearPending();firstLoaded=false;await loadFirstDrink();alert(data.error);
     }else if(data.code==='EMAIL_REQUIRED'){
       receiptField.hidden=false;document.getElementById('receiptEmail').focus();orderNotice(data.error);
+    }else if(data.code==='INVALID_COMMENT'){
+      clearPending();alert(data.error);orderCommentInput.focus();
     }else if(['CATALOG_CHANGED','PRICE_CHANGED','INVALID_ITEMS','INVALID_ITEM','INVALID_MODIFIER','INVALID_QUANTITY','INVALID_PICKUP','ORDER_TOO_LONG'].includes(data.code)){
       clearPending();alert(data.error);cartItems=[];updateCart();await loadCatalog();
     }else if(data.payment_status==='checking'||data.payment_status==='paid'){
@@ -4318,7 +4327,7 @@ try {
     if (legacy?.order?.user_id === tg.initDataUnsafe.user.id) { saved = legacy; localStorage.setItem(PENDING_KEY, JSON.stringify(saved)); localStorage.removeItem('fitme.pending-order.v2'); }
   }
   if (saved?.order?.order_id && Array.isArray(saved.display) && saved.display.length) {
-    pendingOrder = saved.order; cartItems = saved.display; updateCart(); renderCart();
+    pendingOrder = saved.order; orderCommentInput.value=saved.order.comment||''; cartItems = saved.display; updateCart(); renderCart();
   }
 } catch { /* No request is sent until durable storage can be written. */ }
 loadCatalog();
@@ -4334,7 +4343,7 @@ function historyCard(order) {
   const date = new Date(order.created_at).toLocaleString('ru-RU', {timeZone:'Europe/Moscow',day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
   return `<article class="history-card"><div class="history-top"><div><div class="history-number">Заказ ${order.order_number ? '№'+esc(order.order_number) : ''}</div><div class="history-date">${esc(date)} · МСК</div></div><span class="history-status ${order.status === 'sent' ? '' : 'pending'}">${status}</span></div>
     ${order.items.map(item=>`<div class="history-item"><div class="history-item-head"><strong>${esc(item.name)}${item.volume ? ` · ${esc(item.volume)}` : ''} × ${esc(item.quantity)}</strong><span>${money(item.price*item.quantity)}</span></div><div class="history-item-options">${esc(item.milk)}<br>${esc(item.supplements.join(', ') || 'Без добавок')}</div></div>`).join('')}
-    <div class="history-total"><span>Итого</span><strong>${money(order.total)}</strong></div><div class="history-pickup">${esc(order.pickup)}</div></article>`;
+    <div class="history-total"><span>Итого</span><strong>${money(order.total)}</strong></div><div class="history-pickup">${esc(order.pickup)}</div>${order.comment?`<div class="history-pickup">Комментарий: ${esc(order.comment)}</div>`:""}</article>`;
 }
 function historyState(title, description) {
   return `<div class="history-state"><strong>${esc(title)}</strong><p>${esc(description)}</p></div>`;
@@ -4439,6 +4448,7 @@ setTimeout(() => { if (tg?.initData && !historyHasSnapshot && !historyLoading) l
 setTimeout(checkDetached,1000);
 
 void loadFirstDrink();
+
 </script>
 
 </body>
