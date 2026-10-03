@@ -3816,6 +3816,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 .sheet-handle:focus-visible{outline:2px solid var(--lime);border-radius:8px}
 #proteinFlavorPicker .flavor-grid .option>.option-left{display:flex;white-space:normal}
 </style>
+<style>#menuView:has(>.promo-banner:not([hidden])){padding-top:14px}</style>
 </head>
 
 <body>
@@ -3933,8 +3934,8 @@ let cartItems = [];
 let orderIsSending = false;
 let pendingOrder = null;
 let firstEligible=false,firstLoaded=false,personalDiscounts=[];
-const promoBanner=document.createElement('div');promoBanner.hidden=true;
-promoBanner.style.cssText='background:#eff9df;border-radius:20px;padding:20px;margin:16px;font-size:16px;line-height:1.5';
+const promoBanner=document.createElement('div');promoBanner.hidden=true;promoBanner.className='promo-banner';
+promoBanner.style.cssText='background:#eff9df;border-radius:20px;padding:20px;margin:0 16px 16px;font-size:16px;line-height:1.5';
 document.getElementById('menuView').prepend(promoBanner);
 const promoIndex=()=>cartItems.length?cartItems.reduce((best,item,i)=>item.price>cartItems[best].price?i:best,0):-1;
 function discountChoice(items=cartItems){
