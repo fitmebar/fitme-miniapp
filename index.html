@@ -4552,10 +4552,14 @@ async function loadHistory(reset = true) {
 
 function showView(view) {
   closeModal(); closeCart();
+  const admin = view === 'admin' && !!document.getElementById('discountPanel');
   const history = view === 'history';
-  document.getElementById('menuView').hidden = history;
+  document.getElementById('menuView').hidden = history || admin;
   document.getElementById('historyView').hidden = !history;
-  document.getElementById('menuTab').setAttribute('aria-current',history ? 'false' : 'page');
+  if(document.getElementById('discountPanel'))document.getElementById('discountPanel').hidden=!admin;
+  document.body.classList.toggle('admin-open',admin);
+  document.getElementById('adminTab')?.setAttribute('aria-current',admin?'page':'false');
+  document.getElementById('menuTab').setAttribute('aria-current',history || admin ? 'false' : 'page');
   document.getElementById('historyTab').setAttribute('aria-current',history ? 'page' : 'false');
   window.scrollTo(0,0);
   if (history) loadHistory(true);
@@ -4628,6 +4632,122 @@ unlinkSavedCard.onclick=()=>{if(!cardManagerBusy&&confirm((cardDemo?'ДЕМОН�
 reloadSavedCard.onclick=()=>refreshCardManager();
 document.getElementById('historyTab').addEventListener('click',()=>void refreshCardManager());
 window.addEventListener('focus',()=>{if(!document.getElementById('historyView').hidden)void refreshCardManager();});
+
+// Owner UI is revealed only after a signed server-side access check.
+(() => {
+ if(tg?.initDataUnsafe?.user?.id!==269213147||!tg?.initData)return;
+ let booting=false,ready=false;
+ async function api(action,body={}){
+  const {response,data}=await readApiJson(API+'admin/discounts/'+action,{method:'POST',headers:authHeaders(),body:JSON.stringify(body),cache:'no-store'},10000);
+  if(!response.ok||!data.ok){const error=new Error(data.error||'Не удалось получить ответ. Попробуйте ещё раз.');error.status=response.status;throw error;}
+  return data;
+ }
+ async function boot(){
+  if(booting||ready)return;booting=true;
+  try{const data=await api('meta');if(data.owner!==true)return;mount();ready=true;}catch{}finally{booting=false;}
+ }
+ function mount(){
+  const style=document.createElement('style');style.textContent=`
+  .bottom-nav.has-admin{grid-template-columns:repeat(3,minmax(0,1fr))}
+  body.admin-open>header,body.admin-open .cart{display:none!important}body.admin-open{padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+  #discountPanel{padding-top:26px;padding-bottom:20px}#discountPanel *{box-sizing:border-box}
+  #discountPanel h1{font-size:30px;letter-spacing:-1px;margin:12px 0 8px}#discountPanel h2{font-size:19px;margin:0 0 12px}
+  #discountPanel p{line-height:1.5}#discountPanel button{font:inherit;cursor:pointer;-webkit-appearance:none;appearance:none}
+  #discountPanel button:disabled{opacity:.5;cursor:default}#discountPanel input{font:inherit;font-size:16px;width:100%;min-height:48px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);min-width:0}
+  #discountPanel input:focus-visible,#discountPanel button:focus-visible{outline:2px solid #78b21c;outline-offset:3px}
+  .dp-muted{font-size:13px;color:var(--muted);margin:0 0 18px}.dp-tabs{display:flex;gap:6px;background:#f2f4ee;border-radius:16px;padding:5px;margin:20px 0}
+  .dp-tabs button{flex:1;border:0;border-radius:12px;padding:12px 6px;background:transparent;color:var(--muted);font-weight:650!important}
+  .dp-tabs button[aria-pressed=true]{background:white;color:var(--ink);box-shadow:0 2px 5px #263b0b0a}
+  .dp-card{border:1px solid var(--line);border-radius:22px;padding:18px;background:#fff;margin:14px 0}.dp-card.dp-selected{border-color:#cce6a5;background:#f7fbee}
+  .dp-customer{display:flex;align-items:center;gap:12px;width:100%;padding:13px 0;border:0;border-bottom:1px solid var(--line);background:white;text-align:left;color:var(--ink)}
+  .dp-customer:last-child{border-bottom:0}.dp-avatar{display:grid;place-items:center;width:40px;height:40px;flex:0 0 40px;border-radius:14px;background:#f0f7e5;color:#486a1c;font-size:18px;font-weight:750}
+  .dp-identity{min-width:0;flex:1;overflow-wrap:anywhere}.dp-identity strong{display:block;font-size:15px}.dp-identity small{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+  .dp-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.dp-link{padding:8px 0;background:none;border:0;color:#527226;font-size:13px!important;font-weight:650!important}
+  .dp-status{font-size:13px;color:var(--muted);line-height:1.5;margin:12px 0}.dp-error{color:#8a461b;background:#fff5e4;border-radius:12px;padding:12px}.dp-success{color:#486a1c;background:#f0f9e2;border-radius:14px;padding:14px}
+  .dp-options{display:flex;gap:8px;margin:10px 0;flex-wrap:wrap}.dp-options button{flex:1;min-width:54px;border:1px solid var(--line);background:#fff;padding:12px 8px;border-radius:13px;color:var(--ink);font-size:14px!important}
+  .dp-options button[aria-pressed=true]{background:#eff8df;border-color:#8ada24;color:#365909;font-weight:700!important}
+  #discountPanel fieldset{margin:22px 0;padding:0;border:0;min-width:0}#discountPanel legend,#discountPanel .dp-label{display:block;font-weight:750;font-size:15px;margin-bottom:9px}
+  .dp-number{display:flex;align-items:center;gap:10px}.dp-number input{max-width:115px}.dp-hint{font-size:12px;color:var(--muted);margin:8px 0 0;line-height:1.5}
+  .dp-primary{display:block;width:100%;border:0;background:var(--lime);color:#233500;border-radius:16px;padding:16px;font-weight:750!important;margin-top:20px}
+  .dp-secondary{display:block;width:100%;border:1px solid var(--line);background:white;color:var(--ink);border-radius:14px;padding:13px;font-weight:650!important;margin:10px 0}
+  .dp-badge{font-size:11px;white-space:nowrap;padding:6px 9px;border-radius:20px;color:#53782a;background:#eff8e1}.dp-badge.off{background:#f1f2ef;color:#777}
+  .dp-percent{font-size:30px;font-weight:800;letter-spacing:-1px}.dp-detail{font-size:13px;line-height:1.6;margin-top:12px;color:var(--muted)}.dp-detail strong{color:var(--ink)}
+  .dp-review-line{display:flex;justify-content:space-between;gap:16px;font-size:14px;line-height:1.5;padding:12px 0;border-bottom:1px solid var(--line)}.dp-review-line strong{text-align:right}
+  @media(min-width:600px){#discountPanel{max-width:580px;margin:auto}}`;
+  document.head.append(style);
+  const panel=document.createElement('section');panel.id='discountPanel';panel.className='container';panel.hidden=true;
+  panel.innerHTML=`<div class="intro-label">Только для тебя</div><h1>Личные скидки</h1><p class="dp-muted">Выбирай клиента и дари приятные цены.</p>
+  <div class="dp-tabs" id="dpTabs"><button type="button" id="dpNewTab" aria-pressed="true">Выдать скидку</button><button type="button" id="dpListTab" aria-pressed="false">Выданные</button></div>
+  <div id="dpNew"><div class="dp-card" id="dpSearchCard"><label class="dp-label" for="dpSearch">Кому подарим скидку?</label><input id="dpSearch" type="search" autocomplete="off" placeholder="@ник, имя или Telegram ID" maxlength="64"><p class="dp-hint" id="dpSearchHint">Недавние клиенты · выбери человека ниже</p><div id="dpCustomers"></div><p id="dpCustomerStatus" class="dp-status" role="status"></p><button type="button" class="dp-link" id="dpCustomerMore" hidden>Показать ещё</button><button type="button" class="dp-secondary" id="dpCustomerRetry" hidden>Повторить поиск</button><p class="dp-hint">Нет клиента? Попроси его открыть FitMe через бота.</p></div>
+  <form id="dpForm" hidden><div id="dpSelected" class="dp-card dp-selected"></div><div class="dp-card">
+   <fieldset><legend>Размер скидки</legend><div class="dp-options" id="dpPercents">${[10,20,50,100].map(n=>`<button type="button" data-percent="${n}" aria-pressed="${n===20}">${n}%</button>`).join('')}</div><label for="dpPercent" class="dp-hint">Или свой процент</label><div class="dp-number"><input id="dpPercent" type="number" inputmode="numeric" min="1" max="100" step="1" value="20" required><span>%</span></div></fieldset>
+   <fieldset><legend>На что действует</legend><div class="dp-options" id="dpScopes"><button type="button" data-scope="drink" aria-pressed="true">Один напиток</button><button type="button" data-scope="order" aria-pressed="false">Весь заказ</button></div><p id="dpScopeHint" class="dp-hint">Самый дорогой напиток в заказе, включая молоко и добавки.</p></fieldset>
+   <fieldset><legend>Сколько раз можно использовать</legend><div class="dp-options" id="dpUsesOptions"><button type="button" data-uses="1" aria-pressed="true">Один раз</button><button type="button" data-uses="5" aria-pressed="false">5 раз</button><button type="button" data-uses="0" aria-pressed="false">До отмены</button></div><div id="dpUsesField"><label for="dpUses" class="dp-hint">Количество заказов</label><div class="dp-number"><input id="dpUses" type="number" inputmode="numeric" min="1" max="1000" step="1" value="1" required></div></div></fieldset>
+   <p class="dp-hint">Скидки не складываются с акцией за 1 ₽. Клиент получит самый выгодный вариант.</p><p id="dpFormError" class="dp-status dp-error" role="alert" hidden></p><button class="dp-primary" type="submit">Проверить и выдать</button>
+  </div></form></div>
+  <div id="dpList" hidden><div class="dp-row"><h2>Выданные скидки</h2><button type="button" class="dp-link" id="dpRefresh">Обновить</button></div><div class="dp-options" id="dpFilters"><button type="button" data-filter="active" aria-pressed="true">Действующие</button><button type="button" data-filter="all" aria-pressed="false">Все</button></div><p class="dp-hint">Ожидающие оплаты заказы временно занимают применение скидки.</p><p id="dpListStatus" class="dp-status" role="status"></p><div id="dpDiscounts"></div><button type="button" class="dp-secondary" id="dpMore" hidden>Показать ещё</button></div>
+  <div id="dpReview" hidden></div>`;
+  document.getElementById('historyView').after(panel);
+  const nav=document.querySelector('.bottom-nav'),tab=document.createElement('button');tab.id='adminTab';tab.type='button';tab.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>Управление';nav.classList.add('has-admin');nav.append(tab);
+  const $=id=>document.getElementById(id),key='fitme.admin.discount.pending.v1.269213147';
+  let selected=null,scope='drink',unlimited=false,customers=[],grants=[],customerOffset=null,listOffset=null,customerGeneration=0,listGeneration=0,searchTimer,filter='active',review=null,pending=false,busy=false,active='new';
+  const identity=c=>`<div class="dp-identity"><strong>${esc(c.name||'Клиент')}</strong><small>${c.username?'@'+esc(c.username)+' · ':''}ID ${c.user_id}</small></div>`;
+  const scopeName=s=>s==='drink'?'Один напиток с добавками':'Весь заказ с добавками';
+  const usesName=n=>n===0?'До отмены':n+' '+(n===1?'заказ':n<5?'заказа':'заказов');
+  function status(el,text,error=false){el.textContent=text;el.classList.toggle('dp-error',error);}
+  function pressed(el,attr,value){el.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset[attr]===String(value))));}
+  function savePending(){try{sessionStorage.setItem(key,JSON.stringify(review));}catch{}}
+  function clearPending(){pending=false;try{sessionStorage.removeItem(key);}catch{}}
+  function switchTab(next){active=next;$('dpNew').hidden=next!=='new';$('dpList').hidden=next!=='list';$('dpNewTab').setAttribute('aria-pressed',String(next==='new'));$('dpListTab').setAttribute('aria-pressed',String(next==='list'));if(next==='list')void loadGrants();}
+  function selectCustomer(c){selected=c;$('dpSearchCard').hidden=true;$('dpForm').hidden=false;$('dpSelected').innerHTML=`<div class="dp-row">${identity(c)}<button type="button" id="dpChange" class="dp-link">Изменить</button></div>`;$('dpChange').onclick=()=>{selected=null;$('dpSearchCard').hidden=false;$('dpForm').hidden=true;$('dpSearch').focus();};}
+  async function loadCustomers(more=false){
+   const gen=++customerGeneration,q=$('dpSearch').value.trim();$('dpCustomerRetry').hidden=true;$('dpCustomerMore').disabled=true;
+   if(!more){customers=[];$('dpCustomers').replaceChildren();}status($('dpCustomerStatus'),'Ищем клиентов…');
+   try{const data=await api('customers',{query:q,offset:more?customerOffset:0});if(gen!==customerGeneration)return;customers=more?[...customers,...data.customers]:data.customers;customerOffset=data.next_offset;
+    $('dpSearchHint').textContent=q?'Результаты поиска':'Недавние клиенты · выбери человека ниже';$('dpCustomers').innerHTML=customers.map((c,i)=>`<button type="button" class="dp-customer" data-customer="${i}"><span class="dp-avatar">${esc((c.name||'?').slice(0,1))}</span>${identity(c)}<span aria-hidden="true">›</span></button>`).join('');
+    status($('dpCustomerStatus'),customers.length?'':'Клиент не найден. Попробуй точный @ник или Telegram ID.');$('dpCustomerMore').hidden=customerOffset===null;
+   }catch(e){if(gen!==customerGeneration)return;status($('dpCustomerStatus'),e.message,true);$('dpCustomerRetry').hidden=false;$('dpCustomerMore').hidden=true;}finally{if(gen===customerGeneration)$('dpCustomerMore').disabled=false;}
+  }
+  async function loadGrants(more=false){
+   const gen=++listGeneration;$('dpMore').disabled=true;$('dpRefresh').disabled=true;status($('dpListStatus'),'Обновляем скидки…');if(!more){grants=[];$('dpDiscounts').replaceChildren();}
+   try{const data=await api('list',{filter,offset:more?listOffset:0});if(gen!==listGeneration)return;grants=more?[...grants,...data.discounts]:data.discounts;listOffset=data.next_offset;
+    $('dpDiscounts').innerHTML=grants.map((g,i)=>`<article class="dp-card"><div class="dp-row"><span class="dp-percent">${g.percent}%</span><span class="dp-badge ${g.status==='active'?'':'off'}">${g.status==='revoked'?'Отменена':g.status==='exhausted'?(g.reserved?'Ждёт оплаты':'Использована'):'Действует'}</span></div>${identity(g)}<div class="dp-detail">${scopeName(g.scope)}<br>${g.remaining===null?'До отмены':`Осталось <strong>${g.remaining}</strong> из ${g.uses}`} · использовано ${g.consumed}${g.reserved?'<br>Ожидает оплаты: '+g.reserved:''}</div>${g.status!=='revoked'?`<button type="button" class="dp-link" data-revoke="${i}">Отменить скидку</button>`:''}</article>`).join('');status($('dpListStatus'),grants.length?'':'Здесь пока нет скидок.');$('dpMore').hidden=listOffset===null;
+   }catch(e){if(gen===listGeneration)status($('dpListStatus'),e.message,true);}finally{if(gen===listGeneration){$('dpMore').disabled=false;$('dpRefresh').disabled=false;}}
+  }
+  function showReview(){
+   $('dpTabs').hidden=true;$('dpNew').hidden=true;$('dpList').hidden=true;$('dpReview').hidden=false;
+   const r=review,grant=r.action==='grant',c=r.customer;
+   $('dpReview').innerHTML=`<div class="dp-card"><h2>${grant?'Всё верно?':'Отменить скидку?'}</h2>${identity(c)}<div class="dp-review-line"><span>Скидка</span><strong>${r.body.percent}%</strong></div><div class="dp-review-line"><span>На что</span><strong>${scopeName(r.body.scope)}</strong></div>${grant?`<div class="dp-review-line"><span>Действует</span><strong>${usesName(r.body.uses)}</strong></div>`:''}<p class="dp-status">${grant?(r.body.percent===100?'При нулевой сумме клиент сможет оформить заказ бесплатно.':'Клиент увидит новую цену при обновлении меню или корзины.'):'Для новых заказов скидка перестанет действовать. Уже открытые счета сохранят свою сумму.'}</p><p id="dpMutationStatus" class="dp-status" role="status">${pending?'Результат выдачи или отмены ещё не подтверждён. Проверь операцию — повторная скидка не создастся.':''}</p><button type="button" id="dpConfirm" class="dp-primary">${pending?'Проверить результат':grant?'Выдать скидку':'Да, отменить скидку'}</button><button type="button" id="dpBack" class="dp-secondary" ${pending?'hidden':''}>Назад</button></div>`;
+   $('dpConfirm').onclick=()=>void mutate();$('dpBack').onclick=()=>{review=null;$('dpReview').hidden=true;$('dpTabs').hidden=false;switchTab(active);};window.scrollTo(0,0);
+  }
+  async function mutate(){
+   if(busy||!review)return;busy=true;pending=true;savePending();$('dpConfirm').disabled=true;$('dpBack').hidden=true;status($('dpMutationStatus'),'Сохраняем…');
+   try{const data=await api(review.action,{...review.body,confirmed:true});if(!data.discount)throw Error('Не удалось подтвердить результат. Повтори проверку.');
+    const action=review.action;clearPending();review=null;status($('dpMutationStatus'),data.discount.status==='revoked'?'Скидка отменена. Уже открытые счета сохраняют свою сумму.':'Скидка выдана. Клиент увидит её при обновлении меню или корзины.');$('dpMutationStatus').classList.add('dp-success');$('dpConfirm').textContent='К выданным скидкам';$('dpConfirm').onclick=()=>{$('dpReview').hidden=true;$('dpTabs').hidden=false;switchTab('list');};
+    if(action==='grant'){selected=null;$('dpSearchCard').hidden=false;$('dpForm').hidden=true;}void loadFirstDrink();
+   }catch(e){status($('dpMutationStatus'),e.status===409?e.message:'Результат не подтверждён. Нажми «Проверить результат» — повторная скидка не создастся. '+e.message,true);$('dpConfirm').textContent='Проверить результат';
+    if([400,403,404,409].includes(e.status)){clearPending();$('dpBack').hidden=false;}
+   }finally{busy=false;$('dpConfirm').disabled=false;}
+  }
+  $('dpNewTab').onclick=()=>switchTab('new');$('dpListTab').onclick=()=>switchTab('list');
+  $('dpSearch').oninput=()=>{clearTimeout(searchTimer);++customerGeneration;$('dpCustomers').replaceChildren();$('dpCustomerMore').hidden=true;searchTimer=setTimeout(()=>void loadCustomers(),250);};
+  $('dpCustomers').onclick=e=>{const b=e.target.closest('[data-customer]');if(b)selectCustomer(customers[Number(b.dataset.customer)]);};
+  $('dpCustomerMore').onclick=()=>void loadCustomers(true);$('dpCustomerRetry').onclick=()=>void loadCustomers();
+  $('dpPercents').onclick=e=>{const b=e.target.closest('[data-percent]');if(b){$('dpPercent').value=b.dataset.percent;pressed($('dpPercents'),'percent',b.dataset.percent);}};
+  $('dpPercent').oninput=()=>pressed($('dpPercents'),'percent',$('dpPercent').value);
+  $('dpScopes').onclick=e=>{const b=e.target.closest('[data-scope]');if(b){scope=b.dataset.scope;pressed($('dpScopes'),'scope',scope);$('dpScopeHint').textContent=scope==='drink'?'Самый дорогой напиток в заказе, включая молоко и добавки.':'Все напитки в заказе, включая молоко и добавки.';}};
+  $('dpUsesOptions').onclick=e=>{const b=e.target.closest('[data-uses]');if(b){unlimited=b.dataset.uses==='0';$('dpUsesField').hidden=unlimited;$('dpUses').disabled=unlimited;if(!unlimited)$('dpUses').value=b.dataset.uses;pressed($('dpUsesOptions'),'uses',b.dataset.uses);}};
+  $('dpUses').oninput=()=>pressed($('dpUsesOptions'),'uses',$('dpUses').value);
+  $('dpForm').onsubmit=e=>{e.preventDefault();const percent=Number($('dpPercent').value),uses=unlimited?0:Number($('dpUses').value);if(!selected||!Number.isInteger(percent)||percent<1||percent>100||!Number.isInteger(uses)||uses<0||uses>1000||!unlimited&&uses<1){$('dpFormError').hidden=false;$('dpFormError').textContent='Укажи процент от 1 до 100 и число заказов от 1 до 1000.';return;}$('dpFormError').hidden=true;review={action:'grant',customer:selected,body:{id:crypto.randomUUID(),user_id:selected.user_id,percent,scope,uses}};showReview();};
+  $('dpRefresh').onclick=()=>void loadGrants();$('dpMore').onclick=()=>void loadGrants(true);
+  $('dpFilters').onclick=e=>{const b=e.target.closest('[data-filter]');if(b){filter=b.dataset.filter;pressed($('dpFilters'),'filter',filter);void loadGrants();}};
+  $('dpDiscounts').onclick=e=>{const b=e.target.closest('[data-revoke]');if(b){const g=grants[Number(b.dataset.revoke)];review={action:'revoke',customer:g,body:{id:g.id,percent:g.percent,scope:g.scope}};showReview();}};
+  try{const saved=JSON.parse(sessionStorage.getItem(key)||'null');if(saved&&['grant','revoke'].includes(saved.action)&&saved.customer&&saved.body?.id){review=saved;pending=true;}}catch{}
+  tab.onclick=()=>{showView('admin');if(review){showReview();return;}switchTab(active);if(active==='new'&&!selected)void loadCustomers();};
+  window.addEventListener('focus',()=>{if(!panel.hidden&&!review){if(active==='list')void loadGrants();else if(!selected)void loadCustomers();}});
+ }
+ void boot();window.addEventListener('focus',()=>void boot());setTimeout(()=>void boot(),5000);
+})();
 </script>
 
 </body>
