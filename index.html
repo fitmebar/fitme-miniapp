@@ -4678,7 +4678,7 @@ window.addEventListener('focus',()=>{if(!document.getElementById('historyView').
   const panel=document.createElement('section');panel.id='discountPanel';panel.className='container';panel.hidden=true;
   panel.innerHTML=`<div class="intro-label">Только для тебя</div><h1>Личные скидки</h1><p class="dp-muted">Выбирай клиента и дари приятные цены.</p>
   <div class="dp-tabs" id="dpTabs"><button type="button" id="dpNewTab" aria-pressed="true">Выдать скидку</button><button type="button" id="dpListTab" aria-pressed="false">Выданные</button></div>
-  <div id="dpNew"><div class="dp-card" id="dpSearchCard"><label class="dp-label" for="dpSearch">Кому подарим скидку?</label><input id="dpSearch" type="search" autocomplete="off" placeholder="@ник, имя или Telegram ID" maxlength="64"><p class="dp-hint" id="dpSearchHint">Недавние клиенты · выбери человека ниже</p><div id="dpCustomers"></div><p id="dpCustomerStatus" class="dp-status" role="status"></p><button type="button" class="dp-link" id="dpCustomerMore" hidden>Показать ещё</button><button type="button" class="dp-secondary" id="dpCustomerRetry" hidden>Повторить поиск</button><p class="dp-hint">Нет клиента? Попроси его открыть FitMe через бота.</p></div>
+  <div id="dpNew"><div class="dp-card" id="dpSearchCard"><label class="dp-label" for="dpSearch">Кому подарим скидку?</label><input id="dpSearch" type="search" autocomplete="off" placeholder="@ник, имя или Telegram ID" maxlength="64"><div class="dp-row"><p class="dp-hint" id="dpSearchHint">Недавние клиенты · выбери человека ниже</p><button type="button" class="dp-link" id="dpCustomerRefresh">Обновить</button></div><div id="dpCustomers"></div><p id="dpCustomerStatus" class="dp-status" role="status"></p><button type="button" class="dp-link" id="dpCustomerMore" hidden>Показать ещё</button><button type="button" class="dp-secondary" id="dpCustomerRetry" hidden>Повторить поиск</button><p class="dp-hint">Нет клиента? Попроси его нажать «Старт» в @FitMeBarbot или заново открыть «Меню FitMe». Затем обнови список.</p></div>
   <form id="dpForm" hidden><div id="dpSelected" class="dp-card dp-selected"></div><div class="dp-card">
    <fieldset><legend>Размер скидки</legend><div class="dp-options" id="dpPercents">${[10,20,50,100].map(n=>`<button type="button" data-percent="${n}" aria-pressed="${n===20}">${n}%</button>`).join('')}</div><label for="dpPercent" class="dp-hint">Или свой процент</label><div class="dp-number"><input id="dpPercent" type="number" inputmode="numeric" min="1" max="100" step="1" value="20" required><span>%</span></div></fieldset>
    <fieldset><legend>На что действует</legend><div class="dp-options" id="dpScopes"><button type="button" data-scope="drink" aria-pressed="true">Один напиток</button><button type="button" data-scope="order" aria-pressed="false">Весь заказ</button></div><p id="dpScopeHint" class="dp-hint">Самый дорогой напиток в заказе, включая молоко и добавки.</p></fieldset>
@@ -4690,6 +4690,7 @@ window.addEventListener('focus',()=>{if(!document.getElementById('historyView').
   document.getElementById('historyView').after(panel);
   const nav=document.querySelector('.bottom-nav'),tab=document.createElement('button');tab.id='adminTab';tab.type='button';tab.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>Управление';nav.classList.add('has-admin');nav.append(tab);
   const $=id=>document.getElementById(id),key='fitme.admin.discount.pending.v1.269213147';
+  let customerRequests=0;
   let selected=null,scope='drink',unlimited=false,customers=[],grants=[],customerOffset=null,listOffset=null,customerGeneration=0,listGeneration=0,searchTimer,filter='active',review=null,pending=false,busy=false,active='new';
   const identity=c=>`<div class="dp-identity"><strong>${esc(c.name||'Клиент')}</strong><small>${c.username?'@'+esc(c.username)+' · ':''}ID ${c.user_id}</small></div>`;
   const scopeName=s=>s==='drink'?'Один напиток с добавками':'Весь заказ с добавками';
@@ -4698,15 +4699,16 @@ window.addEventListener('focus',()=>{if(!document.getElementById('historyView').
   function pressed(el,attr,value){el.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset[attr]===String(value))));}
   function savePending(){try{sessionStorage.setItem(key,JSON.stringify(review));}catch{}}
   function clearPending(){pending=false;try{sessionStorage.removeItem(key);}catch{}}
-  function switchTab(next){active=next;$('dpNew').hidden=next!=='new';$('dpList').hidden=next!=='list';$('dpNewTab').setAttribute('aria-pressed',String(next==='new'));$('dpListTab').setAttribute('aria-pressed',String(next==='list'));if(next==='list')void loadGrants();}
-  function selectCustomer(c){selected=c;$('dpSearchCard').hidden=true;$('dpForm').hidden=false;$('dpSelected').innerHTML=`<div class="dp-row">${identity(c)}<button type="button" id="dpChange" class="dp-link">Изменить</button></div>`;$('dpChange').onclick=()=>{selected=null;$('dpSearchCard').hidden=false;$('dpForm').hidden=true;$('dpSearch').focus();};}
-  async function loadCustomers(more=false){
+  function switchTab(next){active=next;$('dpNew').hidden=next!=='new';$('dpList').hidden=next!=='list';$('dpNewTab').setAttribute('aria-pressed',String(next==='new'));$('dpListTab').setAttribute('aria-pressed',String(next==='list'));if(next==='list')void loadGrants();else if(!selected)void loadCustomers();}
+  function selectCustomer(c){selected=c;$('dpSearchCard').hidden=true;$('dpForm').hidden=false;$('dpSelected').innerHTML=`<div class="dp-row">${identity(c)}<button type="button" id="dpChange" class="dp-link">Изменить</button></div>`;$('dpChange').onclick=()=>{selected=null;$('dpSearchCard').hidden=false;$('dpForm').hidden=true;$('dpSearch').focus();void loadCustomers();};}
+  async function loadCustomers(more=false,quiet=false){
+   if(quiet&&customerRequests)return;customerRequests++;
    const gen=++customerGeneration,q=$('dpSearch').value.trim();$('dpCustomerRetry').hidden=true;$('dpCustomerMore').disabled=true;
-   if(!more){customers=[];$('dpCustomers').replaceChildren();}status($('dpCustomerStatus'),'Ищем клиентов…');
+   if(!more&&!quiet){customers=[];$('dpCustomers').replaceChildren();}if(!quiet)status($('dpCustomerStatus'),'Ищем клиентов…');
    try{const data=await api('customers',{query:q,offset:more?customerOffset:0});if(gen!==customerGeneration)return;customers=more?[...customers,...data.customers]:data.customers;customerOffset=data.next_offset;
     $('dpSearchHint').textContent=q?'Результаты поиска':'Недавние клиенты · выбери человека ниже';$('dpCustomers').innerHTML=customers.map((c,i)=>`<button type="button" class="dp-customer" data-customer="${i}"><span class="dp-avatar">${esc((c.name||'?').slice(0,1))}</span>${identity(c)}<span aria-hidden="true">›</span></button>`).join('');
     status($('dpCustomerStatus'),customers.length?'':'Клиент не найден. Попробуй точный @ник или Telegram ID.');$('dpCustomerMore').hidden=customerOffset===null;
-   }catch(e){if(gen!==customerGeneration)return;status($('dpCustomerStatus'),e.message,true);$('dpCustomerRetry').hidden=false;$('dpCustomerMore').hidden=true;}finally{if(gen===customerGeneration)$('dpCustomerMore').disabled=false;}
+   }catch(e){if(gen!==customerGeneration||quiet)return;status($('dpCustomerStatus'),e.message,true);$('dpCustomerRetry').hidden=false;$('dpCustomerMore').hidden=true;}finally{customerRequests--;if(gen===customerGeneration)$('dpCustomerMore').disabled=false;}
   }
   async function loadGrants(more=false){
    const gen=++listGeneration;$('dpMore').disabled=true;$('dpRefresh').disabled=true;status($('dpListStatus'),'Обновляем скидки…');if(!more){grants=[];$('dpDiscounts').replaceChildren();}
@@ -4732,6 +4734,7 @@ window.addEventListener('focus',()=>{if(!document.getElementById('historyView').
   $('dpNewTab').onclick=()=>switchTab('new');$('dpListTab').onclick=()=>switchTab('list');
   $('dpSearch').oninput=()=>{clearTimeout(searchTimer);++customerGeneration;$('dpCustomers').replaceChildren();$('dpCustomerMore').hidden=true;searchTimer=setTimeout(()=>void loadCustomers(),250);};
   $('dpCustomers').onclick=e=>{const b=e.target.closest('[data-customer]');if(b)selectCustomer(customers[Number(b.dataset.customer)]);};
+  $('dpCustomerRefresh').onclick=()=>void loadCustomers();
   $('dpCustomerMore').onclick=()=>void loadCustomers(true);$('dpCustomerRetry').onclick=()=>void loadCustomers();
   $('dpPercents').onclick=e=>{const b=e.target.closest('[data-percent]');if(b){$('dpPercent').value=b.dataset.percent;pressed($('dpPercents'),'percent',b.dataset.percent);}};
   $('dpPercent').oninput=()=>pressed($('dpPercents'),'percent',$('dpPercent').value);
@@ -4743,11 +4746,41 @@ window.addEventListener('focus',()=>{if(!document.getElementById('historyView').
   $('dpFilters').onclick=e=>{const b=e.target.closest('[data-filter]');if(b){filter=b.dataset.filter;pressed($('dpFilters'),'filter',filter);void loadGrants();}};
   $('dpDiscounts').onclick=e=>{const b=e.target.closest('[data-revoke]');if(b){const g=grants[Number(b.dataset.revoke)];review={action:'revoke',customer:g,body:{id:g.id,percent:g.percent,scope:g.scope}};showReview();}};
   try{const saved=JSON.parse(sessionStorage.getItem(key)||'null');if(saved&&['grant','revoke'].includes(saved.action)&&saved.customer&&saved.body?.id){review=saved;pending=true;}}catch{}
-  tab.onclick=()=>{showView('admin');if(review){showReview();return;}switchTab(active);if(active==='new'&&!selected)void loadCustomers();};
-  window.addEventListener('focus',()=>{if(!panel.hidden&&!review){if(active==='list')void loadGrants();else if(!selected)void loadCustomers();}});
+  tab.onclick=()=>{showView('admin');if(review){showReview();return;}switchTab(active);};
+  function refreshVisibleCustomers(){if(!document.hidden&&!panel.hidden&&!review&&active==='new'&&!selected)void loadCustomers(false,true);}
+  window.addEventListener('focus',()=>{if(!panel.hidden&&!review&&active==='list')void loadGrants();else refreshVisibleCustomers();});
+  document.addEventListener('visibilitychange',refreshVisibleCustomers);
+  setInterval(refreshVisibleCustomers,10000);
  }
  void boot();window.addEventListener('focus',()=>void boot());setTimeout(()=>void boot(),5000);
 })();
+
+// Register the signed Telegram guest independently of orders and promotions.
+(() => {
+ let done=false,busy=false,attempts=0,timer=null,lastAttempt=0;
+ const retryDelays=[1000,3000,8000,20000];
+ async function visit(){
+  if(done||busy||document.hidden)return;
+  clearTimeout(timer);timer=null;busy=true;attempts++;lastAttempt=Date.now();
+  try{
+   if(!tg?.initData)return;
+   const {response,data}=await readApiJson(API+'customers/visit',{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},6000);
+   done=response.ok&&data.ok===true;
+  }catch{}finally{
+   busy=false;
+   if(!done&&attempts<=retryDelays.length)timer=setTimeout(()=>void visit(),retryDelays[attempts-1]);
+  }
+ }
+ function resume(){
+  if(done||busy||document.hidden||Date.now()-lastAttempt<1000)return;
+  attempts=0;void visit();
+ }
+ void visit();
+ window.addEventListener('online',resume);
+ window.addEventListener('focus',resume);
+ document.addEventListener('visibilitychange',resume);
+})();
+
 </script>
 
 </body>
