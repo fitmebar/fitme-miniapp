@@ -4076,7 +4076,7 @@ function cartUnavailable(){
 }
 const stockNotice=document.createElement('p');stockNotice.hidden=true;stockNotice.style.cssText='padding:14px;background:#fff3cd;border-radius:14px;line-height:1.45';
 document.getElementById('cartItems').after(stockNotice);
-const discountSummary=document.createElement('p');discountSummary.hidden=true;discountSummary.style.cssText='color:#416918;font-weight:700';document.getElementById('cartGrandTotal').after(discountSummary);
+const discountSummary=document.createElement('p');discountSummary.hidden=true;discountSummary.style.cssText='color:#416918;font-weight:700';document.getElementById('cartGrandTotal').parentElement.after(discountSummary);
 function renderCart() {
   const unavailable=cartUnavailable();stockNotice.hidden=!unavailable;stockNotice.textContent=unavailable?unavailable+' Уберите позицию и выберите замену.':'';
   const box = document.getElementById('cartItems');
@@ -4628,7 +4628,6 @@ unlinkSavedCard.onclick=()=>{if(!cardManagerBusy&&confirm((cardDemo?'ДЕМОН�
 reloadSavedCard.onclick=()=>refreshCardManager();
 document.getElementById('historyTab').addEventListener('click',()=>void refreshCardManager());
 window.addEventListener('focus',()=>{if(!document.getElementById('historyView').hidden)void refreshCardManager();});
-
 </script>
 
 </body>
