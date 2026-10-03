@@ -3920,6 +3920,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 
 
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -4570,6 +4571,29 @@ void loadFirstDrink();
 window.addEventListener("focus",()=>{void loadCatalog();});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)void loadCatalog();});
 setInterval(()=>{if(!document.hidden)void loadCatalog();},30000);
+
+// Card management is available independently of checkout and merchant activation.
+const cardManager=document.createElement('section');cardManager.className='history-card';cardManager.id='cardManager';
+cardManager.innerHTML='<h2 style="font-size:19px;margin:0 0 10px">Сохранённая карта</h2><p id="cardManagerStatus" aria-live="polite" style="font-size:14px;line-height:1.5;color:var(--muted)">Загружаем…</p><button type="button" id="unlinkSavedCard" class="payment-edit" hidden>Отвязать карту</button><button type="button" id="reloadSavedCard" class="payment-edit" hidden>Повторить</button>';
+document.querySelector('#historyView .history-caption').after(cardManager);
+const cardManagerStatus=document.getElementById('cardManagerStatus'),unlinkSavedCard=document.getElementById('unlinkSavedCard'),reloadSavedCard=document.getElementById('reloadSavedCard');
+let cardManagerBusy=false;
+async function refreshCardManager(unlink=false){
+ if(cardManagerBusy)return;
+ if(!tg?.initData){cardManagerStatus.textContent='Откройте приложение через бота FitMe в Telegram.';unlinkSavedCard.hidden=true;return;}
+ cardManagerBusy=true;unlinkSavedCard.disabled=true;reloadSavedCard.hidden=true;
+ try{
+  const {response,data}=await readApiJson(API+(unlink?'cards/unlink':'cards/list'),{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
+  if(!response.ok||!data.ok||!('card' in data))throw new Error();
+  unlinkSavedCard.hidden=!data.card;
+  cardManagerStatus.textContent=data.card?'Карта ••'+data.card.last4+'. Вы можете самостоятельно отвязать её от FitMe.':unlink?'Карта отвязана. Для следующих покупок выберите способ оплаты заново.':'У вас нет сохранённой карты. Здесь можно будет отвязать карту после её сохранения.';
+ }catch{cardManagerStatus.textContent=unlink?'Не удалось подтвердить отвязку. Повторите попытку.':'Не удалось загрузить карту. Попробуйте ещё раз.';reloadSavedCard.hidden=false;}
+ finally{cardManagerBusy=false;unlinkSavedCard.disabled=false;}
+}
+unlinkSavedCard.onclick=()=>{if(!cardManagerBusy&&confirm('Отвязать карту от FitMe? Использовать её для новых оплат больше нельзя будет. Уже начатую оплату это не отменяет.'))void refreshCardManager(true);};
+reloadSavedCard.onclick=()=>refreshCardManager();
+document.getElementById('historyTab').addEventListener('click',()=>void refreshCardManager());
+window.addEventListener('focus',()=>{if(!document.getElementById('historyView').hidden)void refreshCardManager();});
 </script>
 
 </body>
