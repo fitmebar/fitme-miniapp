@@ -3921,6 +3921,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 
 
+
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -4577,20 +4578,30 @@ const cardManager=document.createElement('section');cardManager.className='histo
 cardManager.innerHTML='<h2 style="font-size:19px;margin:0 0 10px">Сохранённая карта</h2><p id="cardManagerStatus" aria-live="polite" style="font-size:14px;line-height:1.5;color:var(--muted)">Загружаем…</p><button type="button" id="unlinkSavedCard" class="payment-edit" hidden>Отвязать карту</button><button type="button" id="reloadSavedCard" class="payment-edit" hidden>Повторить</button>';
 document.querySelector('#historyView .history-caption').after(cardManager);
 const cardManagerStatus=document.getElementById('cardManagerStatus'),unlinkSavedCard=document.getElementById('unlinkSavedCard'),reloadSavedCard=document.getElementById('reloadSavedCard');
-let cardManagerBusy=false;
+let cardManagerBusy=false,cardDemo=false,cardDemoRemoved=false;
+const cardDemoNotice=document.createElement('p');cardDemoNotice.hidden=true;cardDemoNotice.id='cardDemoNotice';
+cardDemoNotice.style.cssText='background:#fff3cd;color:#604e16;padding:12px;border-radius:12px;font-size:13px;line-height:1.5';
+cardDemoNotice.textContent='ДЕМОНСТРАЦИЯ · Тестовая карта — без списаний. Показ интерфейса, без привязки карты в ЮKassa.';
+cardManager.querySelector('h2').after(cardDemoNotice);
+if(tg?.initDataUnsafe?.user?.id===269213147){
+ const demoButton=document.createElement('button');demoButton.type='button';demoButton.className='payment-edit';demoButton.id='cardDemoButton';demoButton.textContent='Тестовый пример для ЮKassa';cardManager.append(demoButton);
+ demoButton.onclick=()=>{if(cardManagerBusy)return;cardDemo=!cardDemo;cardDemoRemoved=false;cardDemoNotice.hidden=!cardDemo;demoButton.textContent=cardDemo?'Выйти из демонстрации':'Тестовый пример для ЮKassa';void refreshCardManager();};
+}
+
 async function refreshCardManager(unlink=false){
  if(cardManagerBusy)return;
  if(!tg?.initData){cardManagerStatus.textContent='Откройте приложение через бота FitMe в Telegram.';unlinkSavedCard.hidden=true;return;}
  cardManagerBusy=true;unlinkSavedCard.disabled=true;reloadSavedCard.hidden=true;
  try{
-  const {response,data}=await readApiJson(API+(unlink?'cards/unlink':'cards/list'),{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
+  if(cardDemo&&unlink)cardDemoRemoved=true;
+  const {response,data}=cardDemo?{response:{ok:true},data:{ok:true,card:cardDemoRemoved?null:{last4:'0000'}}}:await readApiJson(API+(unlink?'cards/unlink':'cards/list'),{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
   if(!response.ok||!data.ok||!('card' in data))throw new Error();
   unlinkSavedCard.hidden=!data.card;
   cardManagerStatus.textContent=data.card?'Карта ••'+data.card.last4+'. Вы можете самостоятельно отвязать её от FitMe.':unlink?'Карта отвязана. Для следующих покупок выберите способ оплаты заново.':'У вас нет сохранённой карты. Здесь можно будет отвязать карту после её сохранения.';
  }catch{cardManagerStatus.textContent=unlink?'Не удалось подтвердить отвязку. Повторите попытку.':'Не удалось загрузить карту. Попробуйте ещё раз.';reloadSavedCard.hidden=false;}
  finally{cardManagerBusy=false;unlinkSavedCard.disabled=false;}
 }
-unlinkSavedCard.onclick=()=>{if(!cardManagerBusy&&confirm('Отвязать карту от FitMe? Использовать её для новых оплат больше нельзя будет. Уже начатую оплату это не отменяет.'))void refreshCardManager(true);};
+unlinkSavedCard.onclick=()=>{if(!cardManagerBusy&&confirm((cardDemo?'ДЕМОНСТРАЦИЯ. Тестовая карта, без списаний.\n\n':'')+'Отвязать карту от FitMe? Использовать её для новых оплат больше нельзя будет. Уже начатую оплату это не отменяет.'))void refreshCardManager(true);};
 reloadSavedCard.onclick=()=>refreshCardManager();
 document.getElementById('historyTab').addEventListener('click',()=>void refreshCardManager());
 window.addEventListener('focus',()=>{if(!document.getElementById('historyView').hidden)void refreshCardManager();});
