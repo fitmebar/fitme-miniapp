@@ -4308,7 +4308,7 @@ checkoutButton.before(receiptField);
 const checkoutLink=document.createElement('a');
 checkoutLink.textContent='Открыть страницу оплаты';
 checkoutLink.target='_blank';checkoutLink.rel='noopener noreferrer';checkoutLink.hidden=true;
-checkoutLink.style.cssText='text-align:center;margin:16px 0;color:#496c19';
+checkoutLink.style.cssText='display:block;text-align:center;margin:16px 0;color:#496c19';
 checkoutButton.after(checkoutLink);
 const cancelPaymentButton=document.createElement('button');
 cancelPaymentButton.className='payment-edit';
