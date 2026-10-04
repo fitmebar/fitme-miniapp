@@ -4657,7 +4657,7 @@ function mountStatistics(){
  @media(max-width:360px){.bottom-nav.has-statistics button{font-size:10px}.st-card{padding:14px}.st-dates{gap:5px}.st-dates input{font-size:14px;padding:8px 4px}.st-metric strong{font-size:22px}}
  `;document.head.append(style);
  const panel=document.createElement('section');panel.id='statisticsPanel';panel.className='container';panel.hidden=true;
- panel.innerHTML=`<div class="st-header"><div><div class="eyebrow">Только для владельца</div><h1>Статистика</h1></div><button type="button" class="st-refresh" id="stRefresh" aria-label="Обновить статистику">↻</button></div><p class="st-muted">Заказы мини-приложения · время по Москве</p>
+ panel.innerHTML=`<div class="st-header"><div><div class="eyebrow">Только для владельцев</div><h1>Статистика</h1></div><button type="button" class="st-refresh" id="stRefresh" aria-label="Обновить статистику">↻</button></div><p class="st-muted">Заказы мини-приложения · время по Москве</p>
  <div class="st-presets" id="stPresets"><button data-period="today" aria-pressed="true">Сегодня</button><button data-period="yesterday" aria-pressed="false">Вчера</button><button data-period="week" aria-pressed="false">7 дней</button><button data-period="month" aria-pressed="false">Месяц</button></div>
  <form class="st-dates" id="stDates"><label>С<input id="stFrom" type="date" required></label><label>По<input id="stTo" type="date" required></label><button class="st-go" type="submit" aria-label="Показать выбранный период">→</button></form>
  <div class="st-tabs" id="stTabs"><button data-mode="overview" aria-pressed="true">Обзор</button><button data-mode="orders" aria-pressed="false">Заказы</button><button data-mode="customers" aria-pressed="false">Клиенты</button></div>
@@ -4705,7 +4705,7 @@ function mountStatistics(){
 
 // Owner UI is revealed only after a signed server-side access check.
 (() => {
- if(tg?.initDataUnsafe?.user?.id!==269213147||!tg?.initData)return;
+ if(![269213147,775430307].includes(tg?.initDataUnsafe?.user?.id)||!tg?.initData)return;
  let booting=false,ready=false;
  async function api(action,body={}){
   const {response,data}=await readApiJson(API+'admin/discounts/'+action,{method:'POST',headers:authHeaders(),body:JSON.stringify(body),cache:'no-store'},10000);
@@ -4746,7 +4746,7 @@ function mountStatistics(){
   @media(min-width:600px){#discountPanel{max-width:580px;margin:auto}}`;
   document.head.append(style);
   const panel=document.createElement('section');panel.id='discountPanel';panel.className='container';panel.hidden=true;
-  panel.innerHTML=`<div class="intro-label">Только для тебя</div><h1>Личные скидки</h1><p class="dp-muted">Выбирай клиента и дари приятные цены.</p>
+  panel.innerHTML=`<div class="intro-label">Только для владельцев</div><h1>Личные скидки</h1><p class="dp-muted">Выбирай клиента и дари приятные цены.</p>
   <div class="dp-tabs" id="dpTabs"><button type="button" id="dpNewTab" aria-pressed="true">Выдать скидку</button><button type="button" id="dpListTab" aria-pressed="false">Выданные</button></div>
   <div id="dpNew"><div class="dp-card" id="dpSearchCard"><label class="dp-label" for="dpSearch">Кому подарим скидку?</label><input id="dpSearch" type="search" autocomplete="off" placeholder="@ник, имя или Telegram ID" maxlength="64"><div class="dp-row"><p class="dp-hint" id="dpSearchHint">Недавние клиенты · выбери человека ниже</p><button type="button" class="dp-link" id="dpCustomerRefresh">Обновить</button></div><div id="dpCustomers"></div><p id="dpCustomerStatus" class="dp-status" role="status"></p><button type="button" class="dp-link" id="dpCustomerMore" hidden>Показать ещё</button><button type="button" class="dp-secondary" id="dpCustomerRetry" hidden>Повторить поиск</button><p class="dp-hint">Нет клиента? Попроси его нажать «Старт» в @FitMeBarbot или заново открыть «Меню FitMe». Затем обнови список.</p></div>
   <form id="dpForm" hidden><div id="dpSelected" class="dp-card dp-selected"></div><div id="dpExisting" class="dp-card" role="status"></div><div class="dp-card">
@@ -4759,7 +4759,7 @@ function mountStatistics(){
   <div id="dpReview" hidden></div>`;
   document.getElementById('historyView').after(panel);
   const nav=document.querySelector('.bottom-nav'),tab=document.createElement('button');tab.id='adminTab';tab.type='button';tab.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>Управление';nav.classList.add('has-admin');nav.append(tab);
-  const $=id=>document.getElementById(id),key='fitme.admin.discount.pending.v1.269213147';
+  const $=id=>document.getElementById(id),key='fitme.admin.discount.pending.v1.'+tg.initDataUnsafe.user.id;
   let customerRequests=0,existing=[],existingReady=false,existingGeneration=0,listSearchTimer;
   let selected=null,scope='drink',unlimited=false,customers=[],grants=[],customerOffset=null,listOffset=null,customerGeneration=0,listGeneration=0,searchTimer,filter='active',review=null,pending=false,busy=false,active='new';
   const identity=c=>`<div class="dp-identity"><strong>${esc(c.name||'Клиент')}</strong><small>${c.username?'@'+esc(c.username)+' · ':''}ID ${c.user_id}</small></div>`;
