@@ -3945,8 +3945,12 @@ const connectionStatus=(() => {
  feedback.innerHTML='<span id="connectionMessage" role="status" aria-live="polite"></span><button id="connectionRetry" type="button" hidden>Проверить</button>';
  label.after(feedback);
  const message=feedback.querySelector('span'),retry=feedback.querySelector('button');
- let epoch=0,catalogEpoch=-1,promoEpoch=-1,issue=null;
- const ready=()=>catalogEpoch===epoch&&(!tg?.initData||promoEpoch===epoch);
+ let epoch=0,issue=null,recovering=false;
+ let catalogChecks=0,promoChecks=0,catalogAt=-Infinity,promoAt=-Infinity;
+ let heartbeatChecks=0,heartbeatFirst=0,heartbeatLast=-Infinity;
+ const requiredChecks=()=>recovering?2:1;
+ const ready=()=>catalogChecks>=requiredChecks()&&(!tg?.initData||promoChecks>=requiredChecks())&&
+  (!recovering||(heartbeatChecks>=3&&heartbeatLast-heartbeatFirst>=8000));
  function render(){
   const online=ready()&&navigator.onLine!==false;
   const state=online?(tg?.initData?'online':'telegram'):issue||navigator.onLine===false?'error':'checking';
@@ -3955,24 +3959,40 @@ const connectionStatus=(() => {
   if(message.textContent!==text)message.textContent=text;
   retry.hidden=state!=='error';
  }
- function fail(reason='network'){epoch++;issue=reason;render();}
- function recheck(){epoch++;render();}
- function observe(url,response,data,ticket){
+ function reset(){
+  epoch++;recovering=true;catalogChecks=promoChecks=heartbeatChecks=0;
+  catalogAt=promoAt=heartbeatLast=-Infinity;heartbeatFirst=0;
+ }
+ function fail(reason='network',ticket=epoch){
+  if(ticket!==epoch)return;
+  reset();issue=reason;render();
+ }
+ function recheck(){reset();render();}
+ function observe(url,response,data,ticket,startedAt){
+  // Old successes AND old failures cannot overwrite a newer connection check.
+  if(ticket!==epoch)return;
   const path=new URL(url).pathname;
+  const heartbeat=path==='/';
   const core=path==='/catalog'||path==='/promotions/first-drink';
   if((response.status===401||response.status===403)&&(core||path==='/orders/list')){fail('auth');return;}
   if(response.status>=500||response.status===429){fail('service');return;}
-  if(!core)return;
-  const valid=response.ok&&data?.ok===true&&(path==='/catalog'?Array.isArray(data.catalog?.products)&&Array.isArray(data.catalog?.milk)&&Array.isArray(data.catalog?.supplements):typeof data.eligible==='boolean');
+  if(!core&&!heartbeat)return;
+  const valid=response.ok&&data?.ok===true&&(heartbeat?data.service==='FitMe Orders API':path==='/catalog'?Array.isArray(data.catalog?.products)&&Array.isArray(data.catalog?.milk)&&Array.isArray(data.catalog?.supplements):typeof data.eligible==='boolean');
   if(!valid){fail('service');return;}
-  // A late success from before a failure must not hide the newer outage.
-  if(ticket!==epoch)return;
-  if(path==='/catalog')catalogEpoch=ticket;else promoEpoch=ticket;
-  if(ready())issue=null;render();
+  if(heartbeat){
+   if(startedAt-heartbeatLast>=3000){
+    if(!heartbeatChecks)heartbeatFirst=startedAt;
+    heartbeatLast=startedAt;heartbeatChecks++;
+   }
+  }else if(path==='/catalog'){
+   if(startedAt-catalogAt>=4000){catalogAt=startedAt;catalogChecks++;}
+  }else if(startedAt-promoAt>=4000){promoAt=startedAt;promoChecks++;}
+  // A small health response alone cannot prove that menu/discount data is reachable.
+  if(ready()){issue=null;recovering=false;}render();
  }
- retry.onclick=()=>void refreshConnection(true);
+ retry.onclick=()=>{void probeConnection();void refreshConnection(true);};
  render();
- return {ticket:()=>epoch,observe,fail,recheck,ready,needsPromotion:()=>!!tg?.initData&&promoEpoch!==epoch,setBusy:value=>{retry.disabled=value;}};
+ return {ticket:()=>epoch,observe,fail,recheck,ready,needsPromotion:()=>!!tg?.initData&&promoChecks<requiredChecks(),setBusy:value=>{retry.disabled=value;}};
 })();
 let firstDrinkLoading=0;
 
@@ -4459,6 +4479,7 @@ const BUNDLED_CATALOG = {"version":"2026-10-02-modifiers-1","products":[{"id":"a
 async function readApiJson(url, options, timeoutMs) {
   const controller = new AbortController();
   const connectionTicket=connectionStatus.ticket();
+  const connectionStartedAt=Date.now();
   let timer;
   const deadline = new Promise((_, reject) => { timer = setTimeout(() => {
     reject(new Error('Request timed out')); controller.abort();
@@ -4469,9 +4490,9 @@ async function readApiJson(url, options, timeoutMs) {
       const data = await response.json();
       return {response, data};
     })()]);
-    connectionStatus.observe(url,result.response,result.data,connectionTicket);
+    connectionStatus.observe(url,result.response,result.data,connectionTicket,connectionStartedAt);
     return result;
-  } catch(error){connectionStatus.fail();throw error;}
+  } catch(error){connectionStatus.fail('network',connectionTicket);throw error;}
   finally { clearTimeout(timer); }
 }
 function renderCatalog(next) {
@@ -4654,8 +4675,9 @@ setTimeout(checkDetached,1000);
 
 void loadFirstDrink();
 
-// Reuse normal stock refreshes. Extra discount checks run only during recovery.
-let connectionProbe=null,lastConnectionProbe=Date.now();
+// Small uncached heartbeats detect a silent VPN/routing loss without any DB work.
+// Normal stock refresh stays at 30s; recovery data checks run at most every 8s.
+let connectionProbe=null,lastConnectionProbe=Date.now(),heartbeatProbe=null,lastHeartbeat=Date.now(),heartbeatSequence=0;
 async function refreshConnection(force=false){
  if(document.hidden||connectionProbe)return connectionProbe;
  if(!force&&Date.now()-lastConnectionProbe<1000)return;
@@ -4664,17 +4686,30 @@ async function refreshConnection(force=false){
  connectionProbe=Promise.allSettled([loadCatalog(),...(needsPromotion?[loadFirstDrink()]:[])]);
  try{await connectionProbe;}finally{connectionProbe=null;connectionStatus.setBusy(false);}
 }
+async function probeConnection(){
+ if(document.hidden||heartbeatProbe)return heartbeatProbe;
+ if(navigator.onLine===false)return;
+ lastHeartbeat=Date.now();
+ heartbeatProbe=(async()=>{
+  try{
+   const {response,data}=await readApiJson(API+'?connection='+Date.now()+'-'+(++heartbeatSequence),{cache:'no-store'},3000);
+   if(response.ok&&data?.ok===true&&data.service==='FitMe Orders API'&&!connectionStatus.ready()&&Date.now()-lastConnectionProbe>=8000)void refreshConnection();
+  }catch{/* readApiJson records the outage; keep retrying without touching checkout. */}
+ })();
+ try{await heartbeatProbe;}finally{heartbeatProbe=null;}
+}
 function resumeConnection(){
  if(document.hidden)return;
- if(Date.now()-lastConnectionProbe>30000&&connectionStatus.ready())connectionStatus.recheck();
+ if(Date.now()-lastHeartbeat>7000&&connectionStatus.ready())connectionStatus.recheck();
+ void probeConnection();
  void refreshConnection(true);
 }
 window.addEventListener('offline',()=>connectionStatus.fail());
-window.addEventListener('online',()=>{connectionStatus.recheck();void refreshConnection(true);});
+window.addEventListener('online',()=>{connectionStatus.recheck();void probeConnection();void refreshConnection(true);});
 window.addEventListener('focus',resumeConnection);
 document.addEventListener('visibilitychange',resumeConnection);
-setInterval(()=>void refreshConnection(),30000);
-setInterval(()=>{if(!connectionStatus.ready())void refreshConnection();},8000);
+setInterval(()=>{if(connectionStatus.ready())void refreshConnection();},30000);
+setInterval(()=>void probeConnection(),4000);
 
 // Card management is available independently of checkout and merchant activation.
 const cardManager=document.createElement('section');cardManager.className='history-card';cardManager.id='cardManager';
