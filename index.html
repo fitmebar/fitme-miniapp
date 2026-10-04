@@ -3955,9 +3955,11 @@ const connectionStatus=(() => {
   const online=ready()&&navigator.onLine!==false;
   const state=online?(tg?.initData?'online':'telegram'):issue||navigator.onLine===false?'error':'checking';
   const text=online?(tg?.initData?'На связи':'Для заказа откройте FitMe через Telegram'):navigator.onLine===false?'Нет интернета. Проверьте соединение.':issue==='auth'?'Не удалось подтвердить вход. Откройте приложение заново.':issue==='service'?'FitMe временно не отвечает. Повторяем проверку.':issue?'Нет связи с FitMe. Попробуйте другую сеть или VPN.':'Проверяем связь…';
+  const previous=label.dataset.connection;
   label.dataset.connection=state;feedback.dataset.connection=state;label.title=text;
   if(message.textContent!==text)message.textContent=text;
   retry.hidden=state!=='error';
+  if(state==='online'&&previous!=='online')queueMicrotask(()=>window.dispatchEvent(new Event('fitme:connection-restored')));
  }
  function reset(){
   epoch++;recovering=true;catalogChecks=promoChecks=heartbeatChecks=0;
@@ -4332,39 +4334,82 @@ const DETACHED_KEY='fitme.detached-payments.v1.'+(tg?.initDataUnsafe?.user?.id||
 let detached=[];
 try{const ids=JSON.parse(localStorage.getItem(DETACHED_KEY)||'[]');if(Array.isArray(ids))detached=ids.filter(id=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id));}catch{}
 const detachedNotice=document.createElement('div');
+detachedNotice.id='detachedNotice';
 detachedNotice.style.cssText='padding:16px;margin:16px;border-radius:16px;background:#fff5d2;font-size:14px;line-height:1.5';
 const detachedText=document.createElement('p');
+detachedText.setAttribute('role','status');detachedText.setAttribute('aria-live','polite');
 const detachedCheck=document.createElement('button');detachedCheck.type='button';detachedCheck.className='payment-edit';detachedCheck.textContent='Проверить прежние оплаты';
 detachedNotice.append(detachedText,detachedCheck);document.getElementById('menuView').before(detachedNotice);
-function renderDetached(){detachedNotice.hidden=!detached.length;detachedText.textContent='Вы вернулись к выбору напитков. Прежние страницы оплаты нужно закрыть. Отменённый заказ не готовим; если оплатить его старую ссылку, оформим возврат. Незавершённых счетов: '+detached.length+'.';}
-function writeDetached(ids){const value=JSON.stringify(ids);localStorage.setItem(DETACHED_KEY,value);if(localStorage.getItem(DETACHED_KEY)!==value)throw new Error('Storage failed');detached=ids;renderDetached();}
-function saveDetached(id){if(!detached.includes(id))writeDetached([...detached,id]);}
-let detachedChecking=false;
-async function checkDetached(){
- if(detachedChecking||!tg?.initData||document.hidden||!detached.length)return;
- detachedChecking=true;detachedCheck.disabled=true;
+const detachedStates=new Map();
+let detachedChecking=false,detachedTimer=null,detachedNextCheck=0,detachedRecheckRequested=false;
+function renderDetached(){
+ detachedNotice.hidden=!detached.length;
+ const states=detached.map(id=>detachedStates.get(id));
+ const text=states.includes('refund_attention')?'Возврат оплаты отменённого заказа требует проверки сотрудником. Обратитесь в бар. Текущий заказ можно оформить отдельно.':
+  states.includes('error')?'Не удалось проверить прежние оплаты. Они сохранены; проверим автоматически после восстановления связи. Старые страницы оплаты не используйте.':
+  states.includes('refunding')?'Оплата отменённого заказа поступила. ЮKassa обрабатывает возврат. Этот заказ не готовим.':
+  states.includes('paid')?'Оплата прежнего заказа получена. Проверяем передачу сотрудникам. Не оплачивайте этот счёт повторно.':
+  states.includes('checking')?'Проверяем состояние прежних оплат. Не оплачивайте старые счета повторно.':
+  'Прежний заказ отменён. Старые страницы оплаты нужно закрыть. ЮKassa ещё не закрыла счёт; если оплатить старую ссылку, оформим возврат. Незавершённых счетов: '+detached.length+'.';
+ if(detachedText.textContent!==text)detachedText.textContent=text;
+ detachedCheck.disabled=detachedChecking;
+ detachedCheck.textContent=detachedChecking?'Проверяем прежние оплаты…':'Проверить прежние оплаты';
+ detachedNotice.setAttribute('aria-busy',String(detachedChecking));
+}
+function scheduleDetachedCheck(delay=30000){
+ clearTimeout(detachedTimer);detachedTimer=null;
+ if(!detached.length||!tg?.initData||document.hidden)return;
+ detachedTimer=setTimeout(()=>{detachedTimer=null;void checkDetached(false);},delay);
+}
+function writeDetached(ids){
+ const value=JSON.stringify(ids);localStorage.setItem(DETACHED_KEY,value);
+ if(localStorage.getItem(DETACHED_KEY)!==value)throw new Error('Storage failed');
+ detached=ids;for(const id of detachedStates.keys())if(!ids.includes(id))detachedStates.delete(id);
+ if(!ids.length){clearTimeout(detachedTimer);detachedTimer=null;}renderDetached();
+}
+function saveDetached(id){if(!detached.includes(id)){writeDetached([...detached,id]);scheduleDetachedCheck();}}
+async function checkDetached(force=true){
+ if(!tg?.initData||document.hidden||!detached.length)return;
+ if(detachedChecking){if(!force)detachedRecheckRequested=true;return;}
+ if(!force&&Date.now()<detachedNextCheck){scheduleDetachedCheck(detachedNextCheck-Date.now());return;}
+ if(!force&&!connectionStatus.ready()){scheduleDetachedCheck(10000);return;}
+ clearTimeout(detachedTimer);detachedTimer=null;detachedNextCheck=Date.now()+10000;
+ detachedChecking=true;renderDetached();
+ let refreshPromotion=false;
  try{
   for(const id of [...detached]){
+   if(document.hidden)break;
    try{
-    const {response,data}=await paymentCall('cancel',{order_id:id});
-    if(!response.ok||!data.ok||data.order_id!==id)continue;
-    if(data.payment_status==='canceled'){writeDetached(detached.filter(x=>x!==id));void loadFirstDrink();}
+    // These orders were already abandoned by an explicit customer action.
+    const {response,data}=await paymentCall('status',{order_id:id});
+    if(!response.ok||!data.ok||data.order_id!==id)throw new Error('Unverified payment');
+    if(data.payment_status==='canceled'){writeDetached(detached.filter(x=>x!==id));refreshPromotion=true;}
     else if(data.payment_status==='refunded'){
-     writeDetached(detached.filter(x=>x!==id));void loadFirstDrink();alert('ЮKassa подтвердила возврат оплаты отменённого заказа. Срок зачисления зависит от банка. Текущая корзина сохранена.');
-    }else if(data.payment_status==='refunding')detachedText.textContent='Оплата отменённого заказа поступила. ЮKassa обрабатывает возврат. Этот заказ не готовим.';
-    else if(data.payment_status==='refund_attention')detachedText.textContent='Возврат оплаты отменённого заказа требует проверки сотрудником. Обратитесь в бар. Текущий заказ можно оформить отдельно.';
+     writeDetached(detached.filter(x=>x!==id));refreshPromotion=true;alert('ЮKassa подтвердила возврат оплаты отменённого заказа. Срок зачисления зависит от банка. Текущая корзина сохранена.');
+    }else if(['superseded','refunding','refund_attention'].includes(data.payment_status))detachedStates.set(id,data.payment_status);
     else if(data.payment_status==='paid'||data.payment_status==='legacy'){
      historyHasSnapshot=false;
      if(data.delivery_status==='sent'){
       writeDetached(detached.filter(x=>x!==id));
       alert('Прежний заказ оплачен и принят'+(data.order_number?' — №'+data.order_number:'')+'. Посмотрите его в «Моих заказах». Текущая корзина сохранена.');
-     }else detachedText.textContent='Оплата прежнего заказа получена. Проверяем передачу сотрудникам. Не оплачивайте этот счёт повторно.';
-    }
-   }catch{detachedText.textContent='Не удалось проверить прежние оплаты. Они сохранены; повторите проверку позже. Старые страницы оплаты не используйте.';}
+     }else detachedStates.set(id,'paid');
+    }else if(['awaiting','checking'].includes(data.payment_status))detachedStates.set(id,'checking');
+    else throw new Error('Unknown payment status');
+   }catch{
+    detachedStates.set(id,'error');
+    // One stalled network must not cost 15 seconds for every stored invoice.
+    if(!connectionStatus.ready())break;
+   }finally{renderDetached();}
   }
- }finally{detachedChecking=false;detachedCheck.disabled=false;}
+ }finally{
+  detachedChecking=false;renderDetached();
+  scheduleDetachedCheck(detachedRecheckRequested?Math.max(0,detachedNextCheck-Date.now()):30000);
+  detachedRecheckRequested=false;if(refreshPromotion)void loadFirstDrink();
+ }
 }
-detachedCheck.onclick=checkDetached;renderDetached();
+detachedCheck.onclick=()=>void checkDetached();
+window.addEventListener('fitme:connection-restored',()=>scheduleDetachedCheck(0));
+renderDetached();
 async function paymentCall(action,body){
   return readApiJson(API+(action==='receipt-email'?'payments/':'checkout/')+action,{method:'POST',cache:'no-store',headers:authHeaders(),body:JSON.stringify(body)},15000);
 }
@@ -4409,7 +4454,7 @@ async function openPayment(url){
 }
 let returnCheckRunning=false;
 async function checkOnReturn(){
-  void checkDetached();
+  void checkDetached(false);
   // Input/keyboard focus is not a return from checkout. No payment exists yet at the email step.
   if(!pendingOrder||!receiptField.hidden||orderIsSending||returnCheckRunning||document.hidden)return;
   returnCheckRunning=true;orderIsSending=true;lockCart();
@@ -4671,7 +4716,7 @@ renderNotify();
 // Warm the private history only within this authenticated page session.
 setTimeout(() => { if (tg?.initData && !historyHasSnapshot && !historyLoading) loadHistory(true); }, 600);
 
-setTimeout(checkDetached,1000);
+scheduleDetachedCheck(1000);
 
 void loadFirstDrink();
 
