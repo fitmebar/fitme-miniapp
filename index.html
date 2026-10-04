@@ -4639,9 +4639,8 @@ window.addEventListener('focus',()=>{if(!document.getElementById('historyView').
 
 // Mounted only after the existing signed owner check. Reports load on demand.
 function mountStatistics(){
- if(document.getElementById('statisticsPanel'))return;
+ if(document.getElementById('stTabs'))return;
  const style=document.createElement('style');style.textContent=`
- .bottom-nav.has-statistics{grid-template-columns:repeat(4,minmax(0,1fr))}.bottom-nav.has-statistics button{font-size:11px;gap:5px;padding-left:2px;padding-right:2px}.bottom-nav.has-statistics svg{width:23px;height:23px}
  #statisticsPanel{padding-top:24px;padding-bottom:24px}#statisticsPanel *{box-sizing:border-box}#statisticsPanel h1{font-size:30px;letter-spacing:-1px;margin:10px 0 6px}#statisticsPanel h2{font-size:19px;margin:0 0 14px}#statisticsPanel button,#statisticsPanel input{font:inherit}#statisticsPanel button{cursor:pointer;color:var(--ink)}#statisticsPanel button:disabled{opacity:.5;cursor:default}
  #statisticsPanel input{width:100%;min-width:0;min-height:44px;padding:10px;border:1px solid var(--line);border-radius:12px;background:white;color:var(--ink);font-size:16px}#statisticsPanel button:focus-visible,#statisticsPanel input:focus-visible{outline:2px solid #78b21c;outline-offset:3px}
  .st-header{display:flex;align-items:center;justify-content:space-between;gap:10px}.st-refresh{border:1px solid var(--line);border-radius:50%;background:#fff;width:44px;height:44px;flex:0 0 44px;font-size:24px!important}.st-muted{color:var(--muted);font-size:12px;line-height:1.5;margin:6px 0 14px}
@@ -4654,9 +4653,9 @@ function mountStatistics(){
  .st-person{display:flex;align-items:center;gap:11px;width:100%;border:0;border-bottom:1px solid var(--line);background:white;padding:13px 0;text-align:left}.st-person:last-child{border-bottom:0}.st-rank{width:30px;flex:0 0 30px;color:#709941;font-weight:800;font-size:20px}.st-person-main{flex:1;min-width:0;overflow-wrap:anywhere}.st-person-main strong{display:block;font-size:14px}.st-person-main small{display:block;color:var(--muted);font-size:12px;margin-top:4px}.st-person-total{text-align:right;white-space:nowrap;font-size:14px;font-weight:700}.st-person-total small{display:block;font-weight:400;color:var(--muted);font-size:11px;margin-top:4px}
  .st-secondary{display:block;width:100%;border:1px solid var(--line);border-radius:13px;padding:12px;background:white;font-size:13px!important;margin-top:12px;font-weight:600!important}.st-selected{border:1px solid #cce5a7;background:#f7fbee;border-radius:16px;padding:14px;margin:12px 0;font-size:14px;overflow-wrap:anywhere}.st-selected button{border:0;background:none;text-decoration:underline;font-size:12px!important;margin-top:10px;padding:0}.st-all{display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px}.st-all input{width:18px!important;height:18px;min-height:18px!important}
  .st-order{border:1px solid var(--line);border-radius:18px;margin:12px 0;background:#fff;overflow:hidden}.st-order summary{cursor:pointer;padding:16px;list-style:none}.st-order summary::-webkit-details-marker{display:none}.st-order-head{display:flex;justify-content:space-between;gap:10px;font-size:16px;font-weight:750}.st-order-sub{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5;overflow-wrap:anywhere}.st-badge{display:inline-block;margin-top:9px;padding:5px 8px;border-radius:9px;background:#eff7e3;color:#4a6924;font-size:11px}.st-order-body{border-top:1px solid var(--line);padding:0 16px 16px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.st-item{padding:12px 0;border-bottom:1px solid var(--line)}.st-item small{display:block;color:var(--muted);margin-top:4px}.st-order-hint{font-size:11px;color:var(--muted);margin-top:9px}.st-scroll{max-height:350px;overflow:auto;overscroll-behavior:contain}
- @media(max-width:360px){.bottom-nav.has-statistics button{font-size:10px}.st-card{padding:14px}.st-dates{gap:5px}.st-dates input{font-size:14px;padding:8px 4px}.st-metric strong{font-size:22px}}
+ @media(max-width:360px){.st-card{padding:14px}.st-dates{gap:5px}.st-dates input{font-size:14px;padding:8px 4px}.st-metric strong{font-size:22px}}
  `;document.head.append(style);
- const panel=document.createElement('section');panel.id='statisticsPanel';panel.className='container';panel.hidden=true;
+ const panel=document.getElementById('statisticsPanel');panel.classList.remove('owner-access-pending');panel.removeAttribute('aria-busy');
  panel.innerHTML=`<div class="st-header"><div><div class="eyebrow">Только для владельцев</div><h1>Статистика</h1></div><button type="button" class="st-refresh" id="stRefresh" aria-label="Обновить статистику">↻</button></div><p class="st-muted">Заказы мини-приложения · время по Москве</p>
  <div class="st-presets" id="stPresets"><button data-period="today" aria-pressed="true">Сегодня</button><button data-period="yesterday" aria-pressed="false">Вчера</button><button data-period="week" aria-pressed="false">7 дней</button><button data-period="month" aria-pressed="false">Месяц</button></div>
  <form class="st-dates" id="stDates"><label>С<input id="stFrom" type="date" required></label><label>По<input id="stTo" type="date" required></label><button class="st-go" type="submit" aria-label="Показать выбранный период">→</button></form>
@@ -4664,8 +4663,7 @@ function mountStatistics(){
  <p id="stStatus" class="st-status" role="status" aria-live="polite"></p><button type="button" id="stRetry" class="st-secondary" hidden>Попробовать снова</button>
  <div id="stOverview"></div><div id="stOrdersView" hidden><div id="stSelected" class="st-selected" hidden></div><label id="stAllLabel" class="st-all" hidden><input id="stAll" type="checkbox">Вся история клиента</label><div id="stOrders"></div><button id="stOrderMore" class="st-secondary" hidden>Показать ещё</button></div>
  <div id="stCustomersView" hidden><input id="stSearch" type="search" placeholder="Имя, @ник или Telegram ID" aria-label="Найти клиента" autocomplete="off"><div class="st-card" id="stCustomers"></div><button id="stCustomerMore" class="st-secondary" hidden>Показать ещё</button></div>`;
- document.getElementById('discountPanel').after(panel);
- const nav=document.querySelector('.bottom-nav'),tab=document.createElement('button');tab.id='statisticsTab';tab.type='button';tab.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 20h16M6 16V9M12 16V4M18 16v-5" stroke-linecap="round"/></svg>Статистика';nav.classList.add('has-statistics');nav.append(tab);
+ const tab=document.getElementById('statisticsTab');
  const $=id=>document.getElementById(id),rub=c=>(Number(c||0)/100).toLocaleString('ru-RU',{maximumFractionDigits:2})+' ₽';
  const today=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  const shift=(day,n)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
@@ -4703,23 +4701,53 @@ function mountStatistics(){
  panel.addEventListener('click',e=>{const leader=e.target.closest('[data-leader]'),customer=e.target.closest('[data-st-customer]'),order=e.target.closest('[data-order-client]');if(leader)select(leaders[Number(leader.dataset.leader)]);if(customer)select(customers[Number(customer.dataset.stCustomer)]);if(order){const o=orders.find(x=>x.user_id===Number(order.dataset.orderClient));if(o)select(o);}});
 }
 
-// Owner UI is revealed only after a signed server-side access check.
+// The Telegram ID is a display hint only. Protected panels mount after signed server authorization.
 (() => {
  if(![269213147,775430307].includes(tg?.initDataUnsafe?.user?.id)||!tg?.initData)return;
- let booting=false,ready=false;
+ let booting=false,ready=false,denied=false;
+ // Reserve the final navigation layout synchronously; never cache permission or private data.
+ const accessStyle=document.createElement('style');accessStyle.textContent=`
+ .bottom-nav.has-statistics{grid-template-columns:repeat(4,minmax(0,1fr))}.bottom-nav.has-statistics button{font-size:11px;gap:5px;padding-left:2px;padding-right:2px}.bottom-nav.has-statistics svg{width:23px;height:23px}
+  body.admin-open>header,body.admin-open .cart{display:none!important}body.admin-open{padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+ .owner-access-pending{padding-top:26px;padding-bottom:24px}.owner-access-pending h1{font-size:30px;letter-spacing:-1px;margin:12px 0 16px}.owner-access-pending p{color:var(--muted);font-size:14px;line-height:1.5}.owner-access-pending button{font:inherit;border:1px solid var(--line);border-radius:14px;background:white;color:var(--ink);padding:12px 20px;cursor:pointer}
+ @media(max-width:360px){.bottom-nav.has-statistics button{font-size:10px}}`;
+ document.head.append(accessStyle);
+ const accessViews=[['admin','discountPanel','adminTab','Управление'],['statistics','statisticsPanel','statisticsTab','Статистика']];
+ let previous=document.getElementById('historyView');
+ for(const [view,id,tabId,title] of accessViews){
+  const panel=document.createElement('section');panel.id=id;panel.className='container owner-access-pending';panel.hidden=true;
+  panel.innerHTML=`<div class="eyebrow">Только для владельцев</div><h1>${title}</h1><p role="status" aria-live="polite">Проверяем доступ…</p><button type="button" hidden>Попробовать снова</button>`;
+  previous.after(panel);previous=panel;panel.querySelector('button').onclick=()=>void boot();
+ }
+ {const nav=document.querySelector('.bottom-nav'),tab=document.createElement('button');tab.id='adminTab';tab.type='button';tab.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>Управление';nav.classList.add('has-admin');nav.append(tab);}
+ {const nav=document.querySelector('.bottom-nav'),tab=document.createElement('button');tab.id='statisticsTab';tab.type='button';tab.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 20h16M6 16V9M12 16V4M18 16v-5" stroke-linecap="round"/></svg>Статистика';nav.classList.add('has-statistics');nav.append(tab);}
+ for(const [view,,tabId] of accessViews)document.getElementById(tabId).onclick=()=>{showView(view);void boot();};
+ function accessStatus(failed=false){
+  for(const [,id] of accessViews){const panel=document.getElementById(id);panel.setAttribute('aria-busy',String(!failed));panel.querySelector('p').textContent=failed?'Не удалось проверить доступ. Попробуйте ещё раз.':'Проверяем доступ…';panel.querySelector('button').hidden=!failed;}
+ }
+ function denyAccess(){
+  denied=true;
+  if(accessViews.some(([,id])=>!document.getElementById(id).hidden))showView('menu');
+  for(const [,id,tabId] of accessViews){document.getElementById(id).remove();document.getElementById(tabId).remove();}
+  document.querySelector('.bottom-nav').classList.remove('has-admin','has-statistics');accessStyle.remove();
+ }
  async function api(action,body={}){
   const {response,data}=await readApiJson(API+'admin/discounts/'+action,{method:'POST',headers:authHeaders(),body:JSON.stringify(body),cache:'no-store'},10000);
   if(!response.ok||!data.ok){const error=new Error(data.error||'Не удалось получить ответ. Попробуйте ещё раз.');error.status=response.status;error.code=data.code;throw error;}
   return data;
  }
  async function boot(){
-  if(booting||ready)return;booting=true;
-  try{const data=await api('meta');if(data.owner!==true)return;mount();ready=true;}catch{}finally{booting=false;}
+  if(booting||ready||denied)return;booting=true;accessStatus();
+  try{
+   const data=await api('meta');if(data.owner!==true){denyAccess();return;}
+   const selected=accessViews.find(([,id])=>!document.getElementById(id).hidden);
+   mount();ready=true;
+   if(selected)document.getElementById(selected[2]).click();
+  }catch(e){if(e.status===401||e.status===403)denyAccess();else if(!ready)accessStatus(true);}
+  finally{booting=false;}
  }
  function mount(){
   const style=document.createElement('style');style.textContent=`
-  .bottom-nav.has-admin{grid-template-columns:repeat(3,minmax(0,1fr))}
-  body.admin-open>header,body.admin-open .cart{display:none!important}body.admin-open{padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
   #discountPanel{padding-top:26px;padding-bottom:20px}#discountPanel *{box-sizing:border-box}
   #discountPanel h1{font-size:30px;letter-spacing:-1px;margin:12px 0 8px}#discountPanel h2{font-size:19px;margin:0 0 12px}
   #discountPanel p{line-height:1.5}#discountPanel button{font:inherit;cursor:pointer;-webkit-appearance:none;appearance:none}
@@ -4745,7 +4773,7 @@ function mountStatistics(){
   .dp-review-line{display:flex;justify-content:space-between;gap:16px;font-size:14px;line-height:1.5;padding:12px 0;border-bottom:1px solid var(--line)}.dp-review-line strong{text-align:right}
   @media(min-width:600px){#discountPanel{max-width:580px;margin:auto}}`;
   document.head.append(style);
-  const panel=document.createElement('section');panel.id='discountPanel';panel.className='container';panel.hidden=true;
+  const panel=document.getElementById('discountPanel');panel.classList.remove('owner-access-pending');panel.removeAttribute('aria-busy');
   panel.innerHTML=`<div class="intro-label">Только для владельцев</div><h1>Личные скидки</h1><p class="dp-muted">Выбирай клиента и дари приятные цены.</p>
   <div class="dp-tabs" id="dpTabs"><button type="button" id="dpNewTab" aria-pressed="true">Выдать скидку</button><button type="button" id="dpListTab" aria-pressed="false">Выданные</button></div>
   <div id="dpNew"><div class="dp-card" id="dpSearchCard"><label class="dp-label" for="dpSearch">Кому подарим скидку?</label><input id="dpSearch" type="search" autocomplete="off" placeholder="@ник, имя или Telegram ID" maxlength="64"><div class="dp-row"><p class="dp-hint" id="dpSearchHint">Недавние клиенты · выбери человека ниже</p><button type="button" class="dp-link" id="dpCustomerRefresh">Обновить</button></div><div id="dpCustomers"></div><p id="dpCustomerStatus" class="dp-status" role="status"></p><button type="button" class="dp-link" id="dpCustomerMore" hidden>Показать ещё</button><button type="button" class="dp-secondary" id="dpCustomerRetry" hidden>Повторить поиск</button><p class="dp-hint">Нет клиента? Попроси его нажать «Старт» в @FitMeBarbot или заново открыть «Меню FitMe». Затем обнови список.</p></div>
@@ -4757,8 +4785,7 @@ function mountStatistics(){
   </div></form></div>
   <div id="dpList" hidden><div class="dp-row"><h2>Выданные скидки</h2><button type="button" class="dp-link" id="dpRefresh">Обновить</button></div><label class="dp-label" for="dpListSearch">Найти клиента</label><input id="dpListSearch" type="search" autocomplete="off" placeholder="@ник, имя или Telegram ID" maxlength="64"><div class="dp-options" id="dpFilters"><button type="button" data-filter="active" aria-pressed="true">Действующие</button><button type="button" data-filter="all" aria-pressed="false">Все</button></div><p class="dp-hint">Ожидающие оплаты заказы временно занимают применение скидки.</p><p id="dpListStatus" class="dp-status" role="status"></p><div id="dpDiscounts"></div><button type="button" class="dp-secondary" id="dpMore" hidden>Показать ещё</button></div>
   <div id="dpReview" hidden></div>`;
-  document.getElementById('historyView').after(panel);
-  const nav=document.querySelector('.bottom-nav'),tab=document.createElement('button');tab.id='adminTab';tab.type='button';tab.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>Управление';nav.classList.add('has-admin');nav.append(tab);
+  const tab=document.getElementById('adminTab');
   const $=id=>document.getElementById(id),key='fitme.admin.discount.pending.v1.'+tg.initDataUnsafe.user.id;
   let customerRequests=0,existing=[],existingReady=false,existingGeneration=0,listSearchTimer;
   let selected=null,scope='drink',unlimited=false,customers=[],grants=[],customerOffset=null,listOffset=null,customerGeneration=0,listGeneration=0,searchTimer,filter='active',review=null,pending=false,busy=false,active='new';
