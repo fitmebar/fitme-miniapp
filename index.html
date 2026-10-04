@@ -3926,6 +3926,56 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 const API = 'https://red-star-21aa.ufitme.workers.dev/';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
+// Only successful live API checks can turn the connection indicator green.
+const connectionStatus=(() => {
+ const label=document.querySelector('#menuView .intro-label');
+ label.id='menuConnectionLabel';label.dataset.connection='checking';
+ const style=document.createElement('style');style.textContent=`
+ #menuConnectionLabel:before{width:9px;height:9px;flex:0 0 9px;background:#b4bab0;box-shadow:none}
+ #menuConnectionLabel[data-connection=online]:before{background:var(--lime)}
+ #menuConnectionLabel[data-connection=error]:before{background:#dd4842;animation:connection-pulse 1.8s ease-in-out infinite}
+ .connection-feedback{display:flex;align-items:baseline;gap:10px;margin:7px 0 0;font-size:12px;line-height:1.45;color:var(--muted)}
+ .connection-feedback[data-connection=error]{color:#b03932}.connection-feedback span{min-width:0;max-width:360px}
+ .connection-feedback button{flex:0 0 auto;border:0;background:none;padding:4px 0;color:inherit;text-decoration:underline;font:inherit;cursor:pointer;min-height:30px}
+ .connection-feedback button:disabled{opacity:.6;cursor:default}
+ @keyframes connection-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 #dd48422e}50%{opacity:.45;box-shadow:0 0 0 4px #dd48420d}}
+ @media(prefers-reduced-motion:reduce){#menuConnectionLabel[data-connection=error]:before{animation:none}}
+ `;document.head.append(style);
+ const feedback=document.createElement('div');feedback.className='connection-feedback';
+ feedback.innerHTML='<span id="connectionMessage" role="status" aria-live="polite"></span><button id="connectionRetry" type="button" hidden>Проверить</button>';
+ label.after(feedback);
+ const message=feedback.querySelector('span'),retry=feedback.querySelector('button');
+ let epoch=0,catalogEpoch=-1,promoEpoch=-1,issue=null;
+ const ready=()=>catalogEpoch===epoch&&(!tg?.initData||promoEpoch===epoch);
+ function render(){
+  const online=ready()&&navigator.onLine!==false;
+  const state=online?(tg?.initData?'online':'telegram'):issue||navigator.onLine===false?'error':'checking';
+  const text=online?(tg?.initData?'На связи':'Для заказа откройте FitMe через Telegram'):navigator.onLine===false?'Нет интернета. Проверьте соединение.':issue==='auth'?'Не удалось подтвердить вход. Откройте приложение заново.':issue==='service'?'FitMe временно не отвечает. Повторяем проверку.':issue?'Нет связи с FitMe. Попробуйте другую сеть или VPN.':'Проверяем связь…';
+  label.dataset.connection=state;feedback.dataset.connection=state;label.title=text;
+  if(message.textContent!==text)message.textContent=text;
+  retry.hidden=state!=='error';
+ }
+ function fail(reason='network'){epoch++;issue=reason;render();}
+ function recheck(){epoch++;render();}
+ function observe(url,response,data,ticket){
+  const path=new URL(url).pathname;
+  const core=path==='/catalog'||path==='/promotions/first-drink';
+  if((response.status===401||response.status===403)&&(core||path==='/orders/list')){fail('auth');return;}
+  if(response.status>=500||response.status===429){fail('service');return;}
+  if(!core)return;
+  const valid=response.ok&&data?.ok===true&&(path==='/catalog'?Array.isArray(data.catalog?.products)&&Array.isArray(data.catalog?.milk)&&Array.isArray(data.catalog?.supplements):typeof data.eligible==='boolean');
+  if(!valid){fail('service');return;}
+  // A late success from before a failure must not hide the newer outage.
+  if(ticket!==epoch)return;
+  if(path==='/catalog')catalogEpoch=ticket;else promoEpoch=ticket;
+  if(ready())issue=null;render();
+ }
+ retry.onclick=()=>void refreshConnection(true);
+ render();
+ return {ticket:()=>epoch,observe,fail,recheck,ready,needsPromotion:()=>!!tg?.initData&&promoEpoch!==epoch,setBusy:value=>{retry.disabled=value;}};
+})();
+let firstDrinkLoading=0;
+
 let catalog = null;
 let products = [];
 let selectedProduct = null;
@@ -3957,6 +4007,7 @@ const cartPayable=()=>discountChoice().total;
 const singlePrice=price=>discountChoice([{price,quantity:1}]).total;
 async function loadFirstDrink(){
  if(!tg?.initData){firstLoaded=true;return;}
+ firstDrinkLoading++;
  try{
   const {response,data}=await readApiJson(API+'promotions/first-drink',{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
   if(!response.ok||typeof data.eligible!=='boolean')throw new Error();
@@ -3965,7 +4016,7 @@ async function loadFirstDrink(){
   if(personalDiscounts.length)promoBanner.textContent='Вам доступна личная скидка: '+personalDiscounts.map(d=>d.percent+'% '+(d.scope==='drink'?'на один напиток':'на весь заказ')).join(', ')+'. Молоко и добавки включены. В корзине выберем самый выгодный вариант без сложения акций.';
   if(catalog){const pickup=document.querySelector('input[name="pickup"]:checked')?.value;renderCatalog(catalog);document.querySelectorAll('input[name="pickup"]').forEach(el=>el.checked=el.value===pickup);}
   updateCart();renderCart();if(selectedProduct)calculatePrice();
- }catch{promoBanner.hidden=true;firstLoaded=false;}
+ }catch{promoBanner.hidden=true;firstLoaded=false;}finally{firstDrinkLoading--;}
 }
 const PENDING_KEY = 'fitme.pending-order.v3.' + (tg?.initDataUnsafe?.user?.id || 'guest');
 const authHeaders = () => ({'Content-Type':'application/json', 'Authorization':'tma ' + (tg?.initData || '')});
@@ -4407,17 +4458,21 @@ const BUNDLED_CATALOG = {"version":"2026-10-02-modifiers-1","products":[{"id":"a
 // Deadline covers both connection and response body, including browsers where abort stalls.
 async function readApiJson(url, options, timeoutMs) {
   const controller = new AbortController();
+  const connectionTicket=connectionStatus.ticket();
   let timer;
   const deadline = new Promise((_, reject) => { timer = setTimeout(() => {
     reject(new Error('Request timed out')); controller.abort();
   }, timeoutMs); });
   try {
-    return await Promise.race([deadline, (async () => {
+    const result=await Promise.race([deadline, (async () => {
       const response = await fetch(url, {...options, signal:controller.signal});
       const data = await response.json();
       return {response, data};
     })()]);
-  } finally { clearTimeout(timer); }
+    connectionStatus.observe(url,result.response,result.data,connectionTicket);
+    return result;
+  } catch(error){connectionStatus.fail();throw error;}
+  finally { clearTimeout(timer); }
 }
 function renderCatalog(next) {
   const previousPickup=document.querySelector('input[name="pickup"]:checked')?.value;
@@ -4599,10 +4654,27 @@ setTimeout(checkDetached,1000);
 
 void loadFirstDrink();
 
-// Refresh stock when returning to the app and while it remains visible.
-window.addEventListener("focus",()=>{void loadCatalog();});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)void loadCatalog();});
-setInterval(()=>{if(!document.hidden)void loadCatalog();},30000);
+// Reuse normal stock refreshes. Extra discount checks run only during recovery.
+let connectionProbe=null,lastConnectionProbe=Date.now();
+async function refreshConnection(force=false){
+ if(document.hidden||connectionProbe)return connectionProbe;
+ if(!force&&Date.now()-lastConnectionProbe<1000)return;
+ lastConnectionProbe=Date.now();connectionStatus.setBusy(true);
+ const needsPromotion=connectionStatus.needsPromotion()&&!firstDrinkLoading;
+ connectionProbe=Promise.allSettled([loadCatalog(),...(needsPromotion?[loadFirstDrink()]:[])]);
+ try{await connectionProbe;}finally{connectionProbe=null;connectionStatus.setBusy(false);}
+}
+function resumeConnection(){
+ if(document.hidden)return;
+ if(Date.now()-lastConnectionProbe>30000&&connectionStatus.ready())connectionStatus.recheck();
+ void refreshConnection(true);
+}
+window.addEventListener('offline',()=>connectionStatus.fail());
+window.addEventListener('online',()=>{connectionStatus.recheck();void refreshConnection(true);});
+window.addEventListener('focus',resumeConnection);
+document.addEventListener('visibilitychange',resumeConnection);
+setInterval(()=>void refreshConnection(),30000);
+setInterval(()=>{if(!connectionStatus.ready())void refreshConnection();},8000);
 
 // Card management is available independently of checkout and merchant activation.
 const cardManager=document.createElement('section');cardManager.className='history-card';cardManager.id='cardManager';
