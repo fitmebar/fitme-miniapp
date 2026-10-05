@@ -4633,7 +4633,9 @@ cartItems=[];orderCommentInput.value='';historyHasSnapshot=false;firstEligible=f
     orderNotice('Ожидаем подтверждение платежа. Не оплачивайте повторно. Если банк отклонил платёж или деньги списаны, а статус не меняется — обратитесь к сотруднику для проверки.');
   }else if(result.payment_status==='canceled'){
     const usedSaved=!!pendingOrder.saved_card_id;
-    clearPending();if(usedSaved){paymentChoice='other';paymentChoiceTouched=true;}void loadFirstDrink();orderNotice(usedSaved?'Банк не подтвердил оплату. Заказ не отправлен. Можно выбрать другой способ оплаты.':'Оплата отменена. Заказ сотрудникам не отправлен.');
+    clearPending();if(usedSaved){paymentChoice='other';paymentChoiceTouched=true;}void loadFirstDrink();
+    const canceledMessage=usedSaved?'Банк не подтвердил оплату. Заказ не отправлен. Можно выбрать другой способ оплаты.':'Оплата отменена. Заказ сотрудникам не отправлен.';
+    orderNotice(canceledMessage);if(usedSaved)alert(canceledMessage);
   }else if(!result.ok){
     orderNotice(result.error||'Не удалось проверить оплату. Попробуйте ещё раз.');
   }
