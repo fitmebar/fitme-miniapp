@@ -4119,6 +4119,7 @@ function lockCart() {
   document.querySelectorAll('.qty-button, .cart-remove, input[name="pickup"], .add-button, #modalAdd').forEach(el => { el.disabled = locked || el.dataset.unavailable === "true"; });
   if(locked)closeCartSwipes();
   orderCommentInput.readOnly = locked;
+  renderPaymentChoices(locked);
   checkoutButton.disabled = orderIsSending || checkoutPreparing || cancelInProgress || (!pendingOrder && !catalog);
   checkoutButton.textContent = orderIsSending ? 'Проверяем…' : !receiptField.hidden ? 'Перейти к оплате' : pendingOrder ? 'Продолжить / проверить оплату' : cartItems.length&&cartPayable()===0?'Оформить бесплатно':'Оплатить заказ';
   document.getElementById('pendingNotice').hidden = !pendingOrder;
@@ -4151,7 +4152,7 @@ function syncSheetScrollLock() {
 }
 function closeModal() { modal.style.display = 'none'; syncSheetScrollLock(); }
 function closeCart() { document.getElementById('cartModal').style.display = 'none'; syncSheetScrollLock(); }
-function openCart() { renderCart(); document.getElementById('cartModal').style.display = 'flex'; syncSheetScrollLock(); }
+function openCart() { void refreshCardManager(); renderCart(); document.getElementById('cartModal').style.display = 'flex'; syncSheetScrollLock(); }
 // A downward gesture at the top dismisses the sheet; other gestures keep native scrolling.
 function enableSheetSwipe(overlay, selector, close) {
   const sheet=overlay.querySelector(selector);
@@ -4429,6 +4430,31 @@ receiptChange.className='payment-edit';
 receiptChange.textContent='Изменить почту для чеков';
 receiptChange.style.display='block';
 checkoutButton.before(receiptNote,receiptChange);
+// Only opaque local card references are used here. Bank details stay in YooKassa.
+let cardRevision=0;
+let savedCard=null,cardsEnabled=false,cardsKnown=false,cardReadTask=null,cardEpoch=0,cardUnlinking=false;
+let paymentChoice='other',paymentChoiceTouched=false,saveCardChoice=false;
+const paymentChoices=document.createElement('section');paymentChoices.id='paymentChoices';
+paymentChoices.innerHTML='<h3>Способ оплаты</h3><div id="paymentChoiceRows"></div><label id="saveCardLabel"><input id="saveCardConsent" type="checkbox"><span>Сохранить карту для следующих заказов</span></label><p id="saveCardTerms">ЮKassa сохранит карту. В следующих заказах списание — только по нажатию «Оплатить», на сумму заказа. Отвязать карту можно в «Моих заказах».</p><p id="cardChoiceHint" aria-live="polite"></p>';
+receiptNote.before(paymentChoices);
+const cardStyles=document.createElement('style');cardStyles.textContent=`
+#paymentChoices{margin:24px 0 18px;text-align:left}#paymentChoices h3{font-size:18px;margin:0 0 12px}#paymentChoiceRows{display:grid;gap:8px}.payment-choice{display:flex;align-items:center;gap:10px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff;min-width:0}.payment-choice:has(input:checked){border-color:#8ede15;background:#f7fbed}.payment-choice input,#saveCardConsent{accent-color:#81c800;width:18px;height:18px;flex:0 0 18px;margin:0}.payment-choice span{min-width:0;font-size:15px;line-height:1.4}.payment-choice small{display:block;color:var(--muted);font-size:12px;margin-top:3px}#saveCardLabel{display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.5;margin-top:14px}#saveCardConsent{margin-top:2px}#saveCardTerms,#cardChoiceHint{font-size:12px;line-height:1.5;color:var(--muted);margin:9px 0 0}#paymentChoices [hidden]{display:none!important}`;document.head.append(cardStyles);
+function renderPaymentChoices(locked=!!pendingOrder||orderIsSending||checkoutPreparing||cancelInProgress){
+ if(typeof paymentChoices==='undefined')return;
+ paymentChoices.hidden=cartItems.length>0&&cartPayable()===0;
+ const ref=pendingOrder?.saved_card_id||(paymentChoice==='saved'?savedCard?.id:null);
+ const saving=pendingOrder?pendingOrder.save_card===true:saveCardChoice;
+ const useSaved=!!ref,hasCard=!!savedCard||!!pendingOrder?.saved_card_id;
+ const rows=document.getElementById('paymentChoiceRows');
+ rows.innerHTML=(hasCard?`<label class="payment-choice"><input type="radio" name="paymentMethod" value="saved" ${useSaved?'checked':''} ${locked||!cardsKnown?'disabled':''}><span>${savedCard?'Карта ••'+esc(savedCard.last4):'Сохранённая карта'}<small>Оплата без ввода реквизитов</small></span></label>`:'')+`<label class="payment-choice"><input type="radio" name="paymentMethod" value="other" ${!useSaved?'checked':''} ${locked?'disabled':''}><span>${hasCard?'Другой способ оплаты':'Карта, СБП и другие способы'}<small>На странице ЮKassa</small></span></label>`;
+ rows.querySelectorAll('input').forEach(el=>el.onchange=()=>{paymentChoice=el.value;paymentChoiceTouched=true;saveCardChoice=false;renderPaymentChoices();});
+ const consent=document.getElementById('saveCardConsent');consent.checked=saving;consent.disabled=locked||!cardsKnown||!cardsEnabled;
+ consent.onchange=()=>{saveCardChoice=consent.checked;paymentChoiceTouched=true;renderPaymentChoices();};
+ document.getElementById('saveCardLabel').hidden=useSaved||(!cardsEnabled&&!saving);
+ document.getElementById('saveCardTerms').hidden=useSaved||(!cardsEnabled&&!saving);
+ document.getElementById('cardChoiceHint').textContent=saving?'Для сохранения выберите банковскую карту. Для СБП снимите галочку.':!cardsKnown?'Сохранённая карта пока недоступна. Можно оплатить через ЮKassa.':'';
+}
+
 receiptChange.onclick=async()=>{
   if(orderIsSending)return;
   if(pendingOrder){alert('Сначала завершите оплату или нажмите «Изменить заказ». Почта уже созданного счёта не меняется.');return;}
@@ -4586,10 +4612,13 @@ async function showPaymentState(result){
   if(!pendingOrder || result.order_id!==pendingOrder.order_id)return;
   if((result.payment_status==='paid'||result.payment_status==='legacy')&&result.delivery_status==='sent'){
     const pickup=pendingOrder.pickup;
-    clearPending();cartItems=[];orderCommentInput.value='';historyHasSnapshot=false;firstEligible=false;void loadFirstDrink();
+    const savedRequested=pendingOrder.save_card===true;
+    clearPending();saveCardChoice=false;
+    if(savedRequested){paymentChoiceTouched=false;void refreshCardManager();}
+cartItems=[];orderCommentInput.value='';historyHasSnapshot=false;firstEligible=false;void loadFirstDrink();
     document.querySelectorAll('input[name="pickup"]').forEach(el=>el.checked=false);
     closeCart();updateCart();renderCart();
-    alert(`Заказ принят ✅\n${result.order_number?'№'+result.order_number+'\n':''}📍 ${pickup}\nСообщим, когда будет готово.`);
+    alert(`Заказ принят ✅\n${result.order_number?'№'+result.order_number+'\n':''}📍 ${pickup}\nСообщим, когда будет готово.${savedRequested?(result.card_saved?'\n\nКарта сохранена для следующих заказов.':'\n\nКарта не сохранена. Оплата заказа прошла успешно.'):''}`);
   }else if(result.payment_status==='paid'&&result.delivery_status==='queued'){
     orderNotice((result.free?'Бесплатный заказ принят ✅ ':'Оплата получена ✅ ')+'Заказ в очереди на передачу бармену. Отправим автоматически — можно закрыть приложение. Повторно платить не нужно.');
   }else if(result.payment_status==='paid'){
@@ -4603,7 +4632,8 @@ async function showPaymentState(result){
   }else if(result.payment_status==='checking'){
     orderNotice('Ожидаем подтверждение платежа. Не оплачивайте повторно. Если банк отклонил платёж или деньги списаны, а статус не меняется — обратитесь к сотруднику для проверки.');
   }else if(result.payment_status==='canceled'){
-    clearPending();void loadFirstDrink();orderNotice('Оплата отменена. Заказ сотрудникам не отправлен.');
+    const usedSaved=!!pendingOrder.saved_card_id;
+    clearPending();if(usedSaved){paymentChoice='other';paymentChoiceTouched=true;}void loadFirstDrink();orderNotice(usedSaved?'Банк не подтвердил оплату. Заказ не отправлен. Можно выбрать другой способ оплаты.':'Оплата отменена. Заказ сотрудникам не отправлен.');
   }else if(!result.ok){
     orderNotice(result.error||'Не удалось проверить оплату. Попробуйте ещё раз.');
   }
@@ -4652,9 +4682,12 @@ async function submitOrder(){
     if(!pickup)return alert('Выберите место получения');
     const total=totalOf(cartItems);
     const payable=cartPayable();
-    if(!confirm(payable===0?`Оформить бесплатный заказ?\n\n${pickup}\nЗаказ сразу поступит бармену.`:`Оплатить заказ на ${payable} ₽?\n\n${pickup}\nНачнём приготовление после подтверждения оплаты.`))return;
+    const chosenCard=payable>0&&paymentChoice==='saved'?savedCard:null;
+    if(payable>0&&paymentChoice==='saved'&&(!cardsKnown||!chosenCard))return alert('Не удалось проверить сохранённую карту. Выберите другой способ оплаты или обновите корзину.');
+    const cardOptions=payable===0?{}:chosenCard?{saved_card_id:chosenCard.id}:saveCardChoice&&cardsKnown&&cardsEnabled?{save_card:true,card_consent_version:'fitme-card-v1',card_revision:cardRevision}:{};
+    if(!confirm(payable===0?`Оформить бесплатный заказ?\n\n${pickup}\nЗаказ сразу поступит бармену.`:`Оплатить заказ на ${payable} ₽${chosenCard?' с карты ••'+chosenCard.last4:''}?\n\n${pickup}\nНачнём приготовление после подтверждения оплаты.`))return;
     const chosenDiscount=discountChoice();
-    const order={order_id:crypto.randomUUID(),catalog_version:catalog.version,
+    const order={order_id:crypto.randomUUID(),catalog_version:catalog.version,...cardOptions,
       items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,...(i.protein_flavor_id?{protein_flavor_id:i.protein_flavor_id}:{}),milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup,comment:orderCommentInput.value.trim(),...(chosenDiscount.id?{discount_id:chosenDiscount.id,discount_total:chosenDiscount.total,discount_percent:chosenDiscount.percent}:chosenDiscount.first?{first_drink:true}:{})};
     try{persistPending(order);}catch{return alert('Не удалось сохранить заказ. Оплата не открывалась.');}
   }
@@ -4931,38 +4964,42 @@ document.addEventListener('visibilitychange',resumeConnection);
 setInterval(()=>{if(connectionStatus.ready())void refreshConnection();},30000);
 setInterval(()=>void probeConnection(),4000);
 
-// Card management is available independently of checkout and merchant activation.
+// The same verified card state is used in checkout and in My orders.
 const cardManager=document.createElement('section');cardManager.className='history-card';cardManager.id='cardManager';
 cardManager.innerHTML='<h2 style="font-size:19px;margin:0 0 10px">Сохранённая карта</h2><p id="cardManagerStatus" aria-live="polite" style="font-size:14px;line-height:1.5;color:var(--muted)">Загружаем…</p><button type="button" id="unlinkSavedCard" class="payment-edit" hidden>Отвязать карту</button><button type="button" id="reloadSavedCard" class="payment-edit" hidden>Повторить</button>';
 document.querySelector('#historyView .history-caption').after(cardManager);
 const cardManagerStatus=document.getElementById('cardManagerStatus'),unlinkSavedCard=document.getElementById('unlinkSavedCard'),reloadSavedCard=document.getElementById('reloadSavedCard');
-let cardManagerBusy=false,cardDemo=false,cardDemoRemoved=false;
-const cardDemoNotice=document.createElement('p');cardDemoNotice.hidden=true;cardDemoNotice.id='cardDemoNotice';
-cardDemoNotice.style.cssText='background:#fff3cd;color:#604e16;padding:12px;border-radius:12px;font-size:13px;line-height:1.5';
-cardDemoNotice.textContent='ДЕМОНСТРАЦИЯ · Тестовая карта — без списаний. Показ интерфейса, без привязки карты в ЮKassa.';
-cardManager.querySelector('h2').after(cardDemoNotice);
-if(tg?.initDataUnsafe?.user?.id===269213147){
- const demoButton=document.createElement('button');demoButton.type='button';demoButton.className='payment-edit';demoButton.id='cardDemoButton';demoButton.textContent='Тестовый пример для ЮKassa';cardManager.append(demoButton);
- demoButton.onclick=()=>{if(cardManagerBusy)return;cardDemo=!cardDemo;cardDemoRemoved=false;cardDemoNotice.hidden=!cardDemo;demoButton.textContent=cardDemo?'Выйти из демонстрации':'Тестовый пример для ЮKassa';void refreshCardManager();};
-}
-
 async function refreshCardManager(unlink=false){
- if(cardManagerBusy)return;
- if(!tg?.initData){cardManagerStatus.textContent='Откройте приложение через бота FitMe в Telegram.';unlinkSavedCard.hidden=true;return;}
- cardManagerBusy=true;unlinkSavedCard.disabled=true;reloadSavedCard.hidden=true;
- try{
-  if(cardDemo&&unlink)cardDemoRemoved=true;
-  const {response,data}=cardDemo?{response:{ok:true},data:{ok:true,card:cardDemoRemoved?null:{last4:'0000'}}}:await readApiJson(API+(unlink?'cards/unlink':'cards/list'),{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
-  if(!response.ok||!data.ok||!('card' in data))throw new Error();
-  unlinkSavedCard.hidden=!data.card;
-  cardManagerStatus.textContent=data.card?'Карта ••'+data.card.last4+'. Вы можете самостоятельно отвязать её от FitMe.':unlink?'Карта отвязана. Для следующих покупок выберите способ оплаты заново.':'У вас нет сохранённой карты. Здесь можно будет отвязать карту после её сохранения.';
- }catch{cardManagerStatus.textContent=unlink?'Не удалось подтвердить отвязку. Повторите попытку.':'Не удалось загрузить карту. Попробуйте ещё раз.';reloadSavedCard.hidden=false;}
- finally{cardManagerBusy=false;unlinkSavedCard.disabled=false;}
+ if(!tg?.initData){cardManagerStatus.textContent='Откройте приложение через бота FitMe в Telegram.';return;}
+ if(cardUnlinking)return cardReadTask;
+ if(!unlink&&cardReadTask)return cardReadTask;
+ const prior=cardReadTask,epoch=++cardEpoch;
+ if(unlink){cardUnlinking=true;cardsKnown=false;savedCard=null;paymentChoice='other';paymentChoiceTouched=true;saveCardChoice=false;renderPaymentChoices();}
+ unlinkSavedCard.disabled=true;reloadSavedCard.hidden=true;
+ const task=(async()=>{
+  try{
+   // Finish an earlier list request before unlinking; its stale answer is ignored.
+   if(unlink&&prior)await prior;
+   const {response,data}=await readApiJson(API+(unlink?'cards/unlink':'cards/list'),{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
+   if(epoch!==cardEpoch)return;
+   if(!response.ok||!data.ok||!('card' in data)||data.card&&(typeof data.card.id!=='string'||!/^\d{4}$/.test(data.card.last4)))throw new Error();
+   savedCard=data.card;cardsEnabled=data.enabled===true&&data.consent_version==='fitme-card-v1'&&Number.isSafeInteger(data.revision);cardRevision=data.revision||0;cardsKnown=true;
+   if(!paymentChoiceTouched&&!pendingOrder&&!checkoutPreparing&&!orderIsSending)paymentChoice=savedCard?'saved':'other';
+   if(!savedCard)paymentChoice='other';
+   unlinkSavedCard.hidden=!savedCard;
+   cardManagerStatus.textContent=savedCard?'Карта ••'+savedCard.last4+'. Списания только по нажатию «Оплатить». Вы можете отвязать её в любой момент.':unlink?'Карта отвязана. Для следующих покупок выберите способ оплаты заново.':'У вас нет сохранённой карты. Её можно сохранить при оплате заказа.';
+  }catch{
+   if(epoch!==cardEpoch)return;cardsKnown=false;
+   cardManagerStatus.textContent=unlink?'Не удалось подтвердить отвязку. Повторите попытку.':'Не удалось загрузить карту. Попробуйте ещё раз.';reloadSavedCard.hidden=false;
+  }finally{
+   if(epoch===cardEpoch){cardReadTask=null;cardUnlinking=false;unlinkSavedCard.disabled=false;renderPaymentChoices();}
+  }
+ })();cardReadTask=task;return task;
 }
-unlinkSavedCard.onclick=()=>{if(!cardManagerBusy&&confirm((cardDemo?'ДЕМОНСТРАЦИЯ. Тестовая карта, без списаний.\n\n':'')+'Отвязать карту от FitMe? Использовать её для новых оплат больше нельзя будет. Уже начатую оплату это не отменяет.'))void refreshCardManager(true);};
+unlinkSavedCard.onclick=()=>{if(!cardUnlinking&&confirm('Отвязать карту от FitMe? Использовать её для новых оплат больше нельзя будет. Уже начатую оплату это не отменяет.'))void refreshCardManager(true);};
 reloadSavedCard.onclick=()=>refreshCardManager();
 document.getElementById('historyTab').addEventListener('click',()=>void refreshCardManager());
-window.addEventListener('focus',()=>{if(!document.getElementById('historyView').hidden)void refreshCardManager();});
+window.addEventListener('focus',()=>{if(!document.getElementById('historyView').hidden||document.getElementById('cartModal').style.display==='flex')void refreshCardManager();});
 
 // Mounted only after the existing signed owner check. Reports load on demand.
 function mountStatistics(){
