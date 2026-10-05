@@ -4063,7 +4063,6 @@ const orderCommentInput=document.getElementById('orderComment');
 function lockCart() {
   const locked = !!pendingOrder || orderIsSending || checkoutPreparing;
   document.querySelectorAll('.qty-button, .cart-remove, input[name="pickup"], .add-button, #modalAdd').forEach(el => { el.disabled = locked || el.dataset.unavailable === "true"; });
-  document.getElementById('cartSwipeHint').hidden = locked || !cartItems.length;
   if(locked)closeCartSwipes();
   orderCommentInput.readOnly = locked;
   checkoutButton.disabled = orderIsSending || checkoutPreparing || (!pendingOrder && !catalog);
@@ -4155,7 +4154,6 @@ const stockNotice=document.createElement('p');stockNotice.hidden=true;stockNotic
 document.getElementById('cartItems').after(stockNotice);
 const discountSummary=document.createElement('p');discountSummary.hidden=true;discountSummary.style.cssText='color:#416918;font-weight:700';document.getElementById('cartGrandTotal').parentElement.after(discountSummary);
 const cartStyle=document.createElement('style');cartStyle.textContent=`
- .cart-swipe-hint{margin:4px 0 14px;color:var(--muted);font-size:12px;line-height:1.5}
  .cart-swipe{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:18px;margin:0 0 12px;background:#fff;touch-action:pan-y pinch-zoom}
  .cart-swipe .cart-item{position:relative;z-index:1;margin:0;padding:12px;background:#fff;border:0;transition:transform .18s ease-out}
  .cart-item-top{display:flex;gap:12px;align-items:center}
@@ -4176,8 +4174,6 @@ const cartStyle=document.createElement('style');cartStyle.textContent=`
  @media(max-width:360px){.cart-item-picture{flex-basis:66px;width:66px;height:86px}.cart-item-top{gap:9px}.cart-swipe .cart-item{padding:10px}.cart-swipe .cart-item-name{font-size:14px}.cart-quantity{gap:9px}}
  @media(prefers-reduced-motion:reduce){.cart-swipe .cart-item{transition:none}}
 `;document.head.append(cartStyle);
-const cartSwipeHint=document.createElement('p');cartSwipeHint.id='cartSwipeHint';cartSwipeHint.className='cart-swipe-hint';cartSwipeHint.textContent='Свайп влево — удалить напиток';
-document.getElementById('cartItems').before(cartSwipeHint);
 const cartTrashIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>';
 function productImage(product){
  if(!product)return '';
