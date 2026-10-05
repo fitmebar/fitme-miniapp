@@ -4480,13 +4480,6 @@ const detachedCheck=document.createElement('button');detachedCheck.type='button'
 detachedCheck.id='detachedCheck';
 const detachedDismiss=document.createElement('button');detachedDismiss.type='button';detachedDismiss.className='payment-edit';detachedDismiss.textContent='Понятно';detachedDismiss.id='detachedDismiss';
 detachedNotice.append(detachedText,detachedCheck,detachedDismiss);document.getElementById('menuView').before(detachedNotice);
-// Keep unresolved invoices discoverable without a permanent banner above the menu.
-const detachedHistory=document.createElement('details');detachedHistory.id='detachedHistory';detachedHistory.className='history-card';
-const detachedSummary=document.createElement('summary');detachedSummary.style.cssText='font-size:14px;font-weight:600;cursor:pointer';
-const detachedHistoryText=document.createElement('p');detachedHistoryText.style.cssText='font-size:13px;line-height:1.5;color:var(--muted)';
-const detachedHistoryCheck=document.createElement('button');detachedHistoryCheck.type='button';detachedHistoryCheck.className='payment-edit';detachedHistoryCheck.id='detachedHistoryCheck';
-detachedHistory.append(detachedSummary,detachedHistoryText,detachedHistoryCheck);
-document.getElementById('historyList').before(detachedHistory);
 const detachedStates=new Map();
 let detachedChecking=false,detachedTimer=null,detachedNextCheck=0,detachedRecheckRequested=false;
 let detachedConfirmationUntil=0,detachedConfirmationTimer=null;
@@ -4502,24 +4495,18 @@ function renderDetached(){
  const allSuperseded=states.length>0&&states.every(state=>state==='superseded');
  // Expire only the acknowledgement, never the invoice or a financial warning.
  detachedNotice.hidden=!detached.length||(allSuperseded&&Date.now()>=detachedConfirmationUntil);
- detachedHistory.hidden=!detached.length;
- detachedSummary.textContent='Прежние оплаты · '+detached.length;
  const text=states.includes('refund_attention')?'Возврат оплаты отменённого заказа требует проверки сотрудником. Обратитесь в бар. Текущий заказ можно оформить отдельно.':
   states.includes('error')?'Не удалось проверить прежние оплаты. Они сохранены; проверим автоматически после восстановления связи. Старые страницы оплаты не используйте.':
   states.includes('refunding')?'Оплата отменённого заказа поступила. ЮKassa обрабатывает возврат. Этот заказ не готовим.':
   states.includes('paid')?'Оплата прежнего заказа получена. Проверяем передачу сотрудникам. Не оплачивайте этот счёт повторно.':
   !allSuperseded?'Проверяем состояние прежних оплат. Не оплачивайте старые счета повторно.':
   'Прежний заказ отменён. Старые страницы оплаты нужно закрыть. ЮKassa ещё не закрыла счёт; если оплатить старую ссылку, оформим возврат. Незавершённых счетов: '+detached.length+'.';
- const noticeText=allSuperseded?'Заказ отменён. Можно выбрать заново. Старую страницу оплаты закройте.':text;
+ const noticeText=allSuperseded?'Заказ отменён. Можно выбрать заново. Старую страницу оплаты закройте. Если оплатить старую ссылку, оформим возврат, а прежний заказ готовить не будем.':text;
  if(detachedText.textContent!==noticeText)detachedText.textContent=noticeText;
- if(detachedHistoryText.textContent!==text)detachedHistoryText.textContent=text;
  detachedDismiss.hidden=!allSuperseded;detachedCheck.hidden=allSuperseded;
- for(const button of [detachedCheck,detachedHistoryCheck]){
-  button.disabled=detachedChecking;
-  button.textContent=detachedChecking?'Проверяем прежние оплаты…':'Проверить прежние оплаты';
- }
+ detachedCheck.disabled=detachedChecking;
+ detachedCheck.textContent=detachedChecking?'Проверяем прежние оплаты…':'Проверить прежние оплаты';
  detachedNotice.setAttribute('aria-busy',String(detachedChecking));
- detachedHistory.setAttribute('aria-busy',String(detachedChecking));
 }
 function scheduleDetachedCheck(delay=30000){
  clearTimeout(detachedTimer);detachedTimer=null;
@@ -4576,7 +4563,6 @@ async function checkDetached(force=true){
  }
 }
 detachedCheck.onclick=()=>void checkDetached();
-detachedHistoryCheck.onclick=()=>void checkDetached();
 detachedDismiss.onclick=dismissDetachedConfirmation;
 window.addEventListener('fitme:connection-restored',()=>scheduleDetachedCheck(0));
 renderDetached();
