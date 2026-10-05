@@ -3816,7 +3816,22 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 .sheet-handle:focus-visible{outline:2px solid var(--lime);border-radius:8px}
 #proteinFlavorPicker .flavor-grid .option>.option-left{display:flex;white-space:normal}
 </style>
-<style>#menuView:has(>.promo-banner:not([hidden])){padding-top:14px}</style>
+<style>
+/* Keep the promotion out of flow so eligibility never moves the menu. */
+.intro-meta{position:relative;padding-right:116px;min-height:44px}
+.promo-badge{position:absolute;right:0;top:0;width:104px;height:48px;padding:7px 8px;border:1px solid #dfeecd;border-radius:14px;background:#eff8e3;color:#426419;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-family:inherit;line-height:1.15;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.promo-badge-label{font-size:9px;font-weight:500;white-space:nowrap}
+.promo-badge-value{font-size:17px;font-weight:750;letter-spacing:-.4px;white-space:nowrap}
+.promo-badge-value[data-free]{font-size:13px;letter-spacing:-.2px}
+.promo-badge:hover,.promo-badge[aria-expanded=true]{background:#e5f4d3;border-color:#c6dfa9}
+.promo-badge:active{transform:scale(.97)}
+.promo-details{position:absolute;right:0;top:calc(100% + 10px);width:min(340px,calc(100vw - 36px));max-height:65dvh;overflow:auto;overscroll-behavior:contain;padding:18px;background:#fff;border:1px solid #deead2;border-radius:20px;box-shadow:0 12px 40px #26351a24;z-index:16;box-sizing:border-box}
+.promo-details-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.promo-details-heading h2{font-size:17px;font-weight:700;letter-spacing:-.3px;line-height:1.3;margin:0}
+.promo-details-close{width:32px;height:32px;flex:0 0 32px;display:grid;place-items:center;background:#f2f6ec;color:#526444;border-radius:50%;border:0;padding:0;font-size:23px;line-height:1;cursor:pointer}
+.promo-details-copy{white-space:pre-line;font-size:13px;line-height:1.6;color:var(--muted);margin:0}
+@media(max-width:360px){.intro-meta{padding-right:110px}.promo-badge{width:100px}.intro-meta>.intro-label{letter-spacing:.14em;line-height:1.45}}
+</style>
 </head>
 
 <body>
@@ -3827,7 +3842,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 </header>
 
 <main class="container" id="menuView">
-  <section class="intro"><div class="intro-label">Вкусно. В твоём ритме.</div><h1>Что выберешь сегодня?</h1></section>
+  <section class="intro"><div class="intro-meta"><div class="intro-label">Вкусно. В твоём ритме.</div></div><h1>Что выберешь сегодня?</h1></section>
   <div id="products"></div><div class="menu-footnote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>Приготовим в течение 10 минут</div>
 </main>
 <section class="container history-view" id="historyView" hidden>
@@ -4007,9 +4022,48 @@ let orderIsSending = false;
 let checkoutPreparing=false;
 let pendingOrder = null;
 let firstEligible=false,firstLoaded=false,personalDiscounts=[];
-const promoBanner=document.createElement('div');promoBanner.hidden=true;promoBanner.className='promo-banner';
-promoBanner.style.cssText='background:#eff9df;border-radius:20px;padding:20px;margin:0 16px 16px;font-size:16px;line-height:1.5';
-document.getElementById('menuView').prepend(promoBanner);
+const promoBadge=document.createElement('button');
+promoBadge.type='button';promoBadge.id='promoBadge';promoBadge.className='promo-badge';promoBadge.hidden=true;
+promoBadge.setAttribute('aria-expanded','false');promoBadge.setAttribute('aria-controls','promoDetails');
+promoBadge.innerHTML='<span class="promo-badge-label"></span><strong class="promo-badge-value"></strong>';
+const promoDetails=document.createElement('div');promoDetails.id='promoDetails';promoDetails.className='promo-details';promoDetails.hidden=true;
+promoDetails.setAttribute('role','region');promoDetails.setAttribute('aria-labelledby','promoDetailsTitle');
+promoDetails.innerHTML='<div class="promo-details-heading"><h2 id="promoDetailsTitle">Твои привилегии</h2><button type="button" class="promo-details-close" aria-label="Закрыть условия скидки">×</button></div><p class="promo-details-copy"></p>';
+document.querySelector('#menuView .intro-meta').append(promoBadge,promoDetails);
+function closePromoDetails(restoreFocus=false){
+ promoDetails.hidden=true;promoBadge.setAttribute('aria-expanded','false');
+ if(restoreFocus&&!promoBadge.hidden)promoBadge.focus({preventScroll:true});
+}
+promoBadge.onclick=()=>{const open=promoDetails.hidden;promoDetails.hidden=!open;promoBadge.setAttribute('aria-expanded',String(open));};
+promoDetails.querySelector('button').onclick=()=>closePromoDetails(true);
+document.addEventListener('click',event=>{if(!promoBadge.contains(event.target)&&!promoDetails.contains(event.target))closePromoDetails();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!promoDetails.hidden){event.preventDefault();closePromoDetails(true);}});
+document.addEventListener('focusin',event=>{if(!promoBadge.contains(event.target)&&!promoDetails.contains(event.target))closePromoDetails();});
+function renderPromotionBadge(){
+ const available=firstLoaded&&(firstEligible||personalDiscounts.length>0);
+ promoBadge.hidden=!available;
+ if(!available){closePromoDetails();return;}
+ const discount=[...personalDiscounts].sort((a,b)=>b.percent-a.percent||Number(b.scope==='order')-Number(a.scope==='order'))[0];
+ let label='Первый напиток',value='1 ₽',description='Первый напиток за 1 ₽';
+ const details=[];
+ if(discount){
+  const scope=discount.scope==='drink'?'один напиток':'весь заказ';
+  label=discount.percent===100?(discount.scope==='drink'?'1 напиток':'Весь заказ'):'Скидка';
+  value=discount.percent===100?'Бесплатно':'−'+discount.percent+'%';
+  description=discount.percent===100?(discount.scope==='drink'?'Один напиток бесплатно':'Весь заказ бесплатно'):'Скидка '+discount.percent+'% на '+scope;
+  for(const d of personalDiscounts){
+   const text=d.scope==='drink'?'На один самый дорогой напиток. Остальные — по прайсу.':'На весь заказ.';
+   details.push(`Скидка ${d.percent}%`+'. '+text);
+  }
+ }
+ if(firstEligible)details.push('Первый напиток за 1 ₽: любой объём, молоко и добавки включены. Скидку получит один самый дорогой напиток; остальные — по прайсу.');
+ if(discount)details.push('Молоко и добавки включены. В корзине автоматически выберем самый выгодный вариант. Скидки и акции не складываются.');
+ promoBadge.querySelector('.promo-badge-label').textContent=label;
+ promoBadge.querySelector('.promo-badge-value').textContent=value;
+ promoBadge.querySelector('.promo-badge-value').toggleAttribute('data-free',discount?.percent===100);
+ promoBadge.setAttribute('aria-label',description+'. Посмотреть условия');
+ promoDetails.querySelector('.promo-details-copy').textContent=details.join('\n\n');
+}
 const promoIndex=()=>cartItems.length?cartItems.reduce((best,item,i)=>item.price>cartItems[best].price?i:best,0):-1;
 function discountChoice(items=cartItems){
  const full=items.reduce((n,x)=>n+Math.round(x.price*100)*x.quantity,0);
@@ -4034,12 +4088,10 @@ async function loadFirstDrink(){
  try{
   const {response,data}=await readApiJson(API+'promotions/first-drink',{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
   if(!response.ok||typeof data.eligible!=='boolean')throw new Error();
-  firstEligible=data.eligible;personalDiscounts=Array.isArray(data.personal)?data.personal:[];firstLoaded=true;promoBanner.hidden=!data.eligible&&!personalDiscounts.length;
-  promoBanner.textContent=data.eligible?'Первый напиток — 1 ₽ 💚 Любой объём, молоко и добавки включены. В корзине скидку получит один самый дорогой напиток; остальные — по прайсу.':'';
-  if(personalDiscounts.length)promoBanner.textContent='Вам доступна личная скидка: '+personalDiscounts.map(d=>d.percent+'% '+(d.scope==='drink'?'на один напиток':'на весь заказ')).join(', ')+'. Молоко и добавки включены. В корзине выберем самый выгодный вариант без сложения акций.';
+  firstEligible=data.eligible;personalDiscounts=Array.isArray(data.personal)?data.personal:[];firstLoaded=true;renderPromotionBadge();
   if(catalog){const pickup=document.querySelector('input[name="pickup"]:checked')?.value;renderCatalog(catalog);document.querySelectorAll('input[name="pickup"]').forEach(el=>el.checked=el.value===pickup);}
   updateCart();renderCart();if(selectedProduct)calculatePrice();
- }catch{promoBanner.hidden=true;firstLoaded=false;}finally{firstDrinkLoading--;}
+ }catch{firstLoaded=false;renderPromotionBadge();}finally{firstDrinkLoading--;}
 }
 const PENDING_KEY = 'fitme.pending-order.v3.' + (tg?.initDataUnsafe?.user?.id || 'guest');
 const authHeaders = () => ({'Content-Type':'application/json', 'Authorization':'tma ' + (tg?.initData || '')});
