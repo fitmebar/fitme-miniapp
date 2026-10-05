@@ -3818,6 +3818,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 </style>
 <style>
 /* Keep the promotion out of flow so eligibility never moves the menu. */
+#menuView .intro h1{margin:0 0 18px}
 .intro-meta{position:relative;padding-right:116px;min-height:44px}
 .promo-badge{position:absolute;right:0;top:0;width:104px;height:48px;padding:7px 8px;border:1px solid #dfeecd;border-radius:14px;background:#eff8e3;color:#426419;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-family:inherit;line-height:1.15;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .promo-badge-label{font-size:9px;font-weight:500;white-space:nowrap}
@@ -3842,7 +3843,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 </header>
 
 <main class="container" id="menuView">
-  <section class="intro"><div class="intro-meta"><div class="intro-label">Вкусно. В твоём ритме.</div></div><h1>Что выберешь сегодня?</h1></section>
+  <section class="intro"><h1>Что выберешь сегодня?</h1><div class="intro-meta"><div class="intro-label">Вкусно. В твоём ритме.</div></div></section>
   <div id="products"></div><div class="menu-footnote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>Приготовим в течение 10 минут</div>
 </main>
 <section class="container history-view" id="historyView" hidden>
@@ -4461,8 +4462,8 @@ cancelPaymentButton.onclick=async()=>{
     if(!response.ok || !data.ok || data.order_id!==id)throw new Error('Unverified payment');
     if(data.payment_status==='canceled'){clearPending();void loadFirstDrink();orderNotice('Заказ можно изменить.');}
     else if(['superseded','refunding','refunded','refund_attention'].includes(data.payment_status)){
-      if(data.payment_status!=='refunded')saveDetached(id);
-      clearPending();firstEligible=false;await loadFirstDrink();closeCart();renderDetached();
+      if(data.payment_status!=='refunded')saveDetached(id,data.payment_status);
+      clearPending();firstEligible=false;await loadFirstDrink();closeCart();showDetachedConfirmation();
     }else await showPaymentState(data);
   }catch{orderNotice('Не удалось проверить оплату. Состав сохранён. Попробуйте ещё раз.');}
   finally{orderIsSending=false;updateCart();renderCart();}
@@ -4476,22 +4477,49 @@ detachedNotice.style.cssText='padding:16px;margin:16px;border-radius:16px;backgr
 const detachedText=document.createElement('p');
 detachedText.setAttribute('role','status');detachedText.setAttribute('aria-live','polite');
 const detachedCheck=document.createElement('button');detachedCheck.type='button';detachedCheck.className='payment-edit';detachedCheck.textContent='Проверить прежние оплаты';
-detachedNotice.append(detachedText,detachedCheck);document.getElementById('menuView').before(detachedNotice);
+detachedCheck.id='detachedCheck';
+const detachedDismiss=document.createElement('button');detachedDismiss.type='button';detachedDismiss.className='payment-edit';detachedDismiss.textContent='Понятно';detachedDismiss.id='detachedDismiss';
+detachedNotice.append(detachedText,detachedCheck,detachedDismiss);document.getElementById('menuView').before(detachedNotice);
+// Keep unresolved invoices discoverable without a permanent banner above the menu.
+const detachedHistory=document.createElement('details');detachedHistory.id='detachedHistory';detachedHistory.className='history-card';
+const detachedSummary=document.createElement('summary');detachedSummary.style.cssText='font-size:14px;font-weight:600;cursor:pointer';
+const detachedHistoryText=document.createElement('p');detachedHistoryText.style.cssText='font-size:13px;line-height:1.5;color:var(--muted)';
+const detachedHistoryCheck=document.createElement('button');detachedHistoryCheck.type='button';detachedHistoryCheck.className='payment-edit';detachedHistoryCheck.id='detachedHistoryCheck';
+detachedHistory.append(detachedSummary,detachedHistoryText,detachedHistoryCheck);
+document.getElementById('historyList').before(detachedHistory);
 const detachedStates=new Map();
 let detachedChecking=false,detachedTimer=null,detachedNextCheck=0,detachedRecheckRequested=false;
+let detachedConfirmationUntil=0,detachedConfirmationTimer=null;
+function dismissDetachedConfirmation(){
+ detachedConfirmationUntil=0;clearTimeout(detachedConfirmationTimer);detachedConfirmationTimer=null;renderDetached();
+}
+function showDetachedConfirmation(){
+ clearTimeout(detachedConfirmationTimer);detachedConfirmationUntil=Date.now()+30000;
+ detachedConfirmationTimer=setTimeout(dismissDetachedConfirmation,30000);renderDetached();
+}
 function renderDetached(){
- detachedNotice.hidden=!detached.length;
  const states=detached.map(id=>detachedStates.get(id));
+ const allSuperseded=states.length>0&&states.every(state=>state==='superseded');
+ // Expire only the acknowledgement, never the invoice or a financial warning.
+ detachedNotice.hidden=!detached.length||(allSuperseded&&Date.now()>=detachedConfirmationUntil);
+ detachedHistory.hidden=!detached.length;
+ detachedSummary.textContent='Прежние оплаты · '+detached.length;
  const text=states.includes('refund_attention')?'Возврат оплаты отменённого заказа требует проверки сотрудником. Обратитесь в бар. Текущий заказ можно оформить отдельно.':
   states.includes('error')?'Не удалось проверить прежние оплаты. Они сохранены; проверим автоматически после восстановления связи. Старые страницы оплаты не используйте.':
   states.includes('refunding')?'Оплата отменённого заказа поступила. ЮKassa обрабатывает возврат. Этот заказ не готовим.':
   states.includes('paid')?'Оплата прежнего заказа получена. Проверяем передачу сотрудникам. Не оплачивайте этот счёт повторно.':
-  states.includes('checking')?'Проверяем состояние прежних оплат. Не оплачивайте старые счета повторно.':
+  !allSuperseded?'Проверяем состояние прежних оплат. Не оплачивайте старые счета повторно.':
   'Прежний заказ отменён. Старые страницы оплаты нужно закрыть. ЮKassa ещё не закрыла счёт; если оплатить старую ссылку, оформим возврат. Незавершённых счетов: '+detached.length+'.';
- if(detachedText.textContent!==text)detachedText.textContent=text;
- detachedCheck.disabled=detachedChecking;
- detachedCheck.textContent=detachedChecking?'Проверяем прежние оплаты…':'Проверить прежние оплаты';
+ const noticeText=allSuperseded?'Заказ отменён. Можно выбрать заново. Старую страницу оплаты закройте.':text;
+ if(detachedText.textContent!==noticeText)detachedText.textContent=noticeText;
+ if(detachedHistoryText.textContent!==text)detachedHistoryText.textContent=text;
+ detachedDismiss.hidden=!allSuperseded;detachedCheck.hidden=allSuperseded;
+ for(const button of [detachedCheck,detachedHistoryCheck]){
+  button.disabled=detachedChecking;
+  button.textContent=detachedChecking?'Проверяем прежние оплаты…':'Проверить прежние оплаты';
+ }
  detachedNotice.setAttribute('aria-busy',String(detachedChecking));
+ detachedHistory.setAttribute('aria-busy',String(detachedChecking));
 }
 function scheduleDetachedCheck(delay=30000){
  clearTimeout(detachedTimer);detachedTimer=null;
@@ -4502,9 +4530,12 @@ function writeDetached(ids){
  const value=JSON.stringify(ids);localStorage.setItem(DETACHED_KEY,value);
  if(localStorage.getItem(DETACHED_KEY)!==value)throw new Error('Storage failed');
  detached=ids;for(const id of detachedStates.keys())if(!ids.includes(id))detachedStates.delete(id);
- if(!ids.length){clearTimeout(detachedTimer);detachedTimer=null;}renderDetached();
+ if(!ids.length){clearTimeout(detachedTimer);detachedTimer=null;clearTimeout(detachedConfirmationTimer);detachedConfirmationTimer=null;detachedConfirmationUntil=0;}renderDetached();
 }
-function saveDetached(id){if(!detached.includes(id)){writeDetached([...detached,id]);scheduleDetachedCheck();}}
+function saveDetached(id,state){
+ if(!detached.includes(id)){writeDetached([...detached,id]);scheduleDetachedCheck();}
+ detachedStates.set(id,state);renderDetached();
+}
 async function checkDetached(force=true){
  if(!tg?.initData||document.hidden||!detached.length)return;
  if(detachedChecking){if(!force)detachedRecheckRequested=true;return;}
@@ -4545,6 +4576,8 @@ async function checkDetached(force=true){
  }
 }
 detachedCheck.onclick=()=>void checkDetached();
+detachedHistoryCheck.onclick=()=>void checkDetached();
+detachedDismiss.onclick=dismissDetachedConfirmation;
 window.addEventListener('fitme:connection-restored',()=>scheduleDetachedCheck(0));
 renderDetached();
 async function paymentCall(action,body){
@@ -4563,8 +4596,9 @@ async function showPaymentState(result){
   }else if(result.payment_status==='paid'){
     orderNotice((result.free?'Бесплатный заказ принят. ':'Оплата получена. ')+'Передача заказа сотрудникам пока не подтверждена. Не оплачивайте повторно: нажмите «Продолжить / проверить оплату» или обратитесь к сотруднику.');
   }else if(['superseded','refunding','refunded','refund_attention'].includes(result.payment_status)){
-    if(result.payment_status!=='refunded')saveDetached(result.order_id);
+    if(result.payment_status!=='refunded')saveDetached(result.order_id,result.payment_status);
     clearPending();firstEligible=false;void loadFirstDrink();orderNotice('Прежний заказ отменён. Можно выбрать напиток заново.');
+    showDetachedConfirmation();
   }else if(result.payment_status==='awaiting'){
     orderNotice(result.error||'Оплата ещё не завершена. Нажмите «Продолжить / проверить оплату», чтобы вернуться к тому же счёту.');
   }else if(result.payment_status==='checking'){
