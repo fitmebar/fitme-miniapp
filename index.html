@@ -4021,6 +4021,7 @@ let currentPrice = 0;
 let cartItems = [];
 let orderIsSending = false;
 let checkoutPreparing=false;
+let cancelInProgress=false,returnCheckRunning=false,returnCheckTask=null;
 let pendingOrder = null;
 let firstEligible=false,firstLoaded=false,personalDiscounts=[];
 const promoBadge=document.createElement('button');
@@ -4114,15 +4115,16 @@ document.getElementById('pickupOptions').after(commentBlock);
 const orderCommentInput=document.getElementById('orderComment');
 
 function lockCart() {
-  const locked = !!pendingOrder || orderIsSending || checkoutPreparing;
+  const locked = !!pendingOrder || orderIsSending || checkoutPreparing || cancelInProgress;
   document.querySelectorAll('.qty-button, .cart-remove, input[name="pickup"], .add-button, #modalAdd').forEach(el => { el.disabled = locked || el.dataset.unavailable === "true"; });
   if(locked)closeCartSwipes();
   orderCommentInput.readOnly = locked;
-  checkoutButton.disabled = orderIsSending || checkoutPreparing || (!pendingOrder && !catalog);
+  checkoutButton.disabled = orderIsSending || checkoutPreparing || cancelInProgress || (!pendingOrder && !catalog);
   checkoutButton.textContent = orderIsSending ? 'Проверяем…' : !receiptField.hidden ? 'Перейти к оплате' : pendingOrder ? 'Продолжить / проверить оплату' : cartItems.length&&cartPayable()===0?'Оформить бесплатно':'Оплатить заказ';
   document.getElementById('pendingNotice').hidden = !pendingOrder;
   cancelPaymentButton.hidden = !pendingOrder;
-  cancelPaymentButton.disabled = orderIsSending;
+  cancelPaymentButton.disabled = cancelInProgress || checkoutPreparing || (orderIsSending && !returnCheckRunning);
+  cancelPaymentButton.textContent = cancelInProgress ? 'Возвращаемся к выбору…' : 'Вернуться к выбору и изменить заказ';
 }
 function updateCart() {
   document.body.classList.toggle('has-cart', cartItems.length > 0);
@@ -4453,20 +4455,30 @@ cancelPaymentButton.className='payment-edit';
 cancelPaymentButton.textContent='Вернуться к выбору и изменить заказ';
 checkoutButton.after(cancelPaymentButton);
 cancelPaymentButton.onclick=async()=>{
-  if(orderIsSending || !pendingOrder)return;
-  if(!confirm('Отменить этот заказ и вернуться к выбору? Если после отмены оплатить старую ссылку, оформим возврат, а прежний заказ готовить не будем.'))return;
-  orderIsSending=true;lockCart();
+  if(!pendingOrder || cancelInProgress || checkoutPreparing || (orderIsSending && !returnCheckRunning))return;
+  const id=pendingOrder.order_id;
+  // Reserve this tap before opening a native dialog, which can emit focus events.
+  cancelInProgress=true;lockCart();
+  let ownsOrderLock=false;
   try{
-    const id=pendingOrder.order_id;
+    if(!confirm('Отменить этот заказ и вернуться к выбору? Если после отмены оплатить старую ссылку, оформим возврат, а прежний заказ готовить не будем.'))return;
+    // Let the in-flight verification finish; do not race paid-order settlement.
+    const returned=returnCheckTask?await returnCheckTask.catch(()=>null):null;
+    if(pendingOrder?.order_id!==id){
+      if(returned?.order_id===id && ['canceled','superseded','refunding','refunded','refund_attention'].includes(returned.payment_status))closeCart();
+      return;
+    }
+    if(returned?.order_id===id && ['paid','legacy'].includes(returned.payment_status))return;
+    orderIsSending=true;ownsOrderLock=true;lockCart();
     const {response,data}=await paymentCall('cancel',{order_id:id});
     if(!response.ok || !data.ok || data.order_id!==id)throw new Error('Unverified payment');
-    if(data.payment_status==='canceled'){clearPending();void loadFirstDrink();orderNotice('Заказ можно изменить.');}
+    if(data.payment_status==='canceled'){clearPending();void loadFirstDrink();orderNotice('Заказ можно изменить.');closeCart();}
     else if(['superseded','refunding','refunded','refund_attention'].includes(data.payment_status)){
       if(data.payment_status!=='refunded')saveDetached(id,data.payment_status);
       clearPending();firstEligible=false;await loadFirstDrink();closeCart();showDetachedConfirmation();
     }else await showPaymentState(data);
   }catch{orderNotice('Не удалось проверить оплату. Состав сохранён. Попробуйте ещё раз.');}
-  finally{orderIsSending=false;updateCart();renderCart();}
+  finally{cancelInProgress=false;if(ownsOrderLock)orderIsSending=false;updateCart();renderCart();}
 };
 const DETACHED_KEY='fitme.detached-payments.v1.'+(tg?.initDataUnsafe?.user?.id||'guest');
 let detached=[];
@@ -4595,13 +4607,19 @@ async function showPaymentState(result){
     orderNotice(result.error||'Не удалось проверить оплату. Попробуйте ещё раз.');
   }
 }
-async function checkPayment(){
-  for(let i=0;i<4 && pendingOrder;i++){
-    const {data}=await paymentCall('status',{order_id:pendingOrder.order_id});
+async function checkPayment(stopForCancel=false){
+  const id=pendingOrder?.order_id;let result=null;
+  if(!id)return result;
+  for(let i=0;i<4 && pendingOrder?.order_id===id;i++){
+    if(stopForCancel && cancelInProgress)return result;
+    const {response,data}=await paymentCall('status',{order_id:id});
+    if(!response.ok || !data.ok || data.order_id!==id)throw new Error('Unverified payment');
+    result=data;
     await showPaymentState(data);
-    if(!pendingOrder || data.payment_status==='awaiting' || !data.ok)return;
+    if(!pendingOrder || data.payment_status==='awaiting' || (stopForCancel && cancelInProgress))return result;
     if(i<3)await new Promise(resolve=>setTimeout(resolve,1500));
   }
+  return result;
 }
 async function openPayment(url){
   const u=new URL(url);
@@ -4609,19 +4627,19 @@ async function openPayment(url){
   checkoutLink.href=url;checkoutLink.hidden=false;
   if(typeof tg?.openLink==='function')tg.openLink(url,{try_instant_view:false});
 }
-let returnCheckRunning=false;
 async function checkOnReturn(){
   void checkDetached(false);
   // Input/keyboard focus is not a return from checkout. No payment exists yet at the email step.
-  if(!pendingOrder||!receiptField.hidden||orderIsSending||returnCheckRunning||document.hidden)return;
+  if(!pendingOrder||!receiptField.hidden||orderIsSending||returnCheckRunning||cancelInProgress||document.hidden)return;
   returnCheckRunning=true;orderIsSending=true;lockCart();
-  try{await checkPayment();}catch{orderNotice('Не удалось проверить оплату. Нажмите «Продолжить / проверить оплату».');}
-  finally{returnCheckRunning=false;orderIsSending=false;updateCart();renderCart();}
+  returnCheckTask=checkPayment(true);
+  try{await returnCheckTask;}catch{if(!cancelInProgress)orderNotice('Не удалось проверить оплату. Нажмите «Продолжить / проверить оплату».');}
+  finally{returnCheckTask=null;returnCheckRunning=false;orderIsSending=false;updateCart();renderCart();}
 }
 window.addEventListener('focus',checkOnReturn);
 document.addEventListener('visibilitychange',checkOnReturn);
 async function submitOrder(){
-  if(orderIsSending || checkoutPreparing || !cartItems.length)return;
+  if(orderIsSending || checkoutPreparing || cancelInProgress || !cartItems.length)return;
   checkoutPreparing=true;lockCart();
   try{
   if(!tg?.initData)return alert('Откройте меню через бота FitMe в Telegram.');
