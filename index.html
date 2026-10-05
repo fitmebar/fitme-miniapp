@@ -4484,7 +4484,7 @@ const DETACHED_KEY='fitme.detached-payments.v1.'+(tg?.initDataUnsafe?.user?.id||
 let detached=[];
 try{const ids=JSON.parse(localStorage.getItem(DETACHED_KEY)||'[]');if(Array.isArray(ids))detached=ids.filter(id=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id));}catch{}
 const detachedNotice=document.createElement('div');
-detachedNotice.id='detachedNotice';
+detachedNotice.id='detachedNotice';detachedNotice.hidden=true;
 detachedNotice.style.cssText='padding:16px;margin:16px;border-radius:16px;background:#fff5d2;font-size:14px;line-height:1.5';
 const detachedText=document.createElement('p');
 detachedText.setAttribute('role','status');detachedText.setAttribute('aria-live','polite');
@@ -4505,13 +4505,14 @@ function showDetachedConfirmation(){
 function renderDetached(){
  const states=detached.map(id=>detachedStates.get(id));
  const allSuperseded=states.length>0&&states.every(state=>state==='superseded');
- // Expire only the acknowledgement, never the invoice or a financial warning.
- detachedNotice.hidden=!detached.length||(allSuperseded&&Date.now()>=detachedConfirmationUntil);
+ // Routine checks stay silent; only verified payment issues or fresh cancellation acknowledgements are shown.
+ const hasWarning=states.some(state=>['refund_attention','error','refunding','paid'].includes(state));
+ detachedNotice.hidden=!detached.length||(!hasWarning&&(!allSuperseded||Date.now()>=detachedConfirmationUntil));
  const text=states.includes('refund_attention')?'Возврат оплаты отменённого заказа требует проверки сотрудником. Обратитесь в бар. Текущий заказ можно оформить отдельно.':
   states.includes('error')?'Не удалось проверить прежние оплаты. Они сохранены; проверим автоматически после восстановления связи. Старые страницы оплаты не используйте.':
   states.includes('refunding')?'Оплата отменённого заказа поступила. ЮKassa обрабатывает возврат. Этот заказ не готовим.':
   states.includes('paid')?'Оплата прежнего заказа получена. Проверяем передачу сотрудникам. Не оплачивайте этот счёт повторно.':
-  !allSuperseded?'Проверяем состояние прежних оплат. Не оплачивайте старые счета повторно.':
+  !allSuperseded?'':
   'Прежний заказ отменён. Старые страницы оплаты нужно закрыть. ЮKassa ещё не закрыла счёт; если оплатить старую ссылку, оформим возврат. Незавершённых счетов: '+detached.length+'.';
  const noticeText=allSuperseded?'Заказ отменён. Можно выбрать заново. Старую страницу оплаты закройте. Если оплатить старую ссылку, оформим возврат, а прежний заказ готовить не будем.':text;
  if(detachedText.textContent!==noticeText)detachedText.textContent=noticeText;
