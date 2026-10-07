@@ -4236,6 +4236,7 @@ const cartStyle=document.createElement('style');cartStyle.textContent=`
 const cartTrashIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>';
 function productImage(product){
  if(!product)return '';
+ if(product.id==='bumble')return 'images/classic-bumble-layered.jpg';
  return ['cocoa','espresso'].includes(product.id)?'images/classic-'+product.id+'-matched-v2.jpg':product.id==='americano'?'images/classic-americano-aligned.jpg':product.image||'';
 }
 function closeCartSwipes(except){
