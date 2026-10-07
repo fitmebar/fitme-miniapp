@@ -5023,7 +5023,7 @@ function mountStatistics(){
  @media(max-width:360px){.st-card{padding:14px}.st-dates{gap:5px}.st-dates input{font-size:14px;padding:8px 4px}.st-metric strong{font-size:22px}}
  `;document.head.append(style);
  const panel=document.getElementById('statisticsPanel');panel.classList.remove('owner-access-pending');panel.removeAttribute('aria-busy');
- panel.innerHTML=`<div class="st-header"><div><div class="eyebrow">Только для владельцев</div><h1>Статистика</h1></div><button type="button" class="st-refresh" id="stRefresh" aria-label="Обновить статистику">↻</button></div><p class="st-muted">Заказы мини-приложения · время по Москве</p>
+ panel.innerHTML=`<div class="st-header"><div><div class="intro-label">Только для владельцев</div><h1>Статистика</h1></div><button type="button" class="st-refresh" id="stRefresh" aria-label="Обновить статистику">↻</button></div><p class="st-muted">Заказы мини-приложения · время по Москве</p>
  <div class="st-presets" id="stPresets"><button data-period="today" aria-pressed="true">Сегодня</button><button data-period="yesterday" aria-pressed="false">Вчера</button><button data-period="week" aria-pressed="false">7 дней</button><button data-period="month" aria-pressed="false">Месяц</button></div>
  <form class="st-dates" id="stDates"><label>С<input id="stFrom" type="date" required></label><label>По<input id="stTo" type="date" required></label><button class="st-go" type="submit" aria-label="Показать выбранный период">→</button></form>
  <div class="st-tabs" id="stTabs"><button data-mode="overview" aria-pressed="true">Обзор</button><button data-mode="orders" aria-pressed="false">Заказы</button><button data-mode="customers" aria-pressed="false">Клиенты</button></div>
@@ -5085,7 +5085,7 @@ function mountStatistics(){
  let previous=document.getElementById('historyView');
  for(const [view,id,tabId,title] of accessViews){
   const panel=document.createElement('section');panel.id=id;panel.className='container owner-access-pending';panel.hidden=true;
-  panel.innerHTML=`<div class="eyebrow">Только для владельцев</div><h1>${title}</h1><p role="status" aria-live="polite">Проверяем доступ…</p><button type="button" hidden>Попробовать снова</button>`;
+  panel.innerHTML=`<div class="intro-label">Только для владельцев</div><h1>${title}</h1><p role="status" aria-live="polite">Проверяем доступ…</p><button type="button" hidden>Попробовать снова</button>`;
   previous.after(panel);previous=panel;panel.querySelector('button').onclick=()=>void boot();
  }
  {const nav=document.querySelector('.bottom-nav'),tab=document.createElement('button');tab.id='adminTab';tab.type='button';tab.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg>Управление';nav.classList.add('has-admin');nav.append(tab);}
