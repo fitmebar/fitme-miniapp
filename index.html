@@ -4124,11 +4124,14 @@ function observeBusinessHours(data){
 }
 function renderBusinessHours(){
  const open=businessOpen(),now=hoursNow();
+ const nextText=((now+3*3600000)%86400000)<10*3600000?'Откроемся сегодня в 10:00':'Откроемся завтра в 10:00';
+ const nextOpening=document.getElementById('nextOpening');
+ if(nextOpening.textContent!==nextText)nextOpening.textContent=nextText;
+ if(lastBusinessOpen===open)return;
  document.getElementById('closedHours').hidden=open;
  document.getElementById('products').hidden=!open;
  document.querySelector('#menuView .menu-footnote').hidden=!open;
  document.querySelector('#menuView h1').textContent=open?'Что выберешь сегодня?':'Бар сейчас закрыт';
- document.getElementById('nextOpening').textContent=((now+3*3600000)%86400000)<10*3600000?'Откроемся сегодня в 10:00':'Откроемся завтра в 10:00';
  document.getElementById('closedCartNotice').hidden=open;
  if(!open){checkoutLink.hidden=true;if(modal.style.display==='flex')closeModal();}
  if(lastBusinessOpen!==open){lastBusinessOpen=open;lockCart();if(selectedProduct)calculatePrice();}
