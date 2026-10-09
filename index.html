@@ -3846,6 +3846,14 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 <main class="container" id="menuView">
   <section class="intro"><h1>Что выберешь сегодня?</h1><div class="intro-meta"><div class="intro-label">Вкусно. В твоём ритме.</div></div></section>
+  <section id="closedHours" class="closed-hours" hidden aria-live="polite">
+    <div class="closed-hours-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg></div>
+    <p class="closed-hours-eyebrow">Ждём тебя каждый день</p>
+    <p class="closed-hours-time">10:00 — 21:30</p>
+    <p class="closed-hours-zone">по московскому времени</p>
+    <p class="closed-hours-next" id="nextOpening">Откроемся в 10:00</p>
+    <p class="closed-hours-caption">Выбрать напиток и оплатить заказ можно в часы работы.</p>
+  </section>
   <div id="products"></div><div class="menu-footnote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>Приготовим за 10 минут. В часы пик может понадобиться больше времени.</div>
 </main>
 <section class="container history-view" id="historyView" hidden>
@@ -3872,7 +3880,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
       <button class="cart-close" onclick="closeCart()">✕</button>
     </div>
 
-    <div id="cartItems"></div>
+    <div id="cartItems"></div><p id="closedCartNotice" class="closed-cart-notice" hidden>Сейчас нерабочее время. Новые заказы и оплата — ежедневно с 10:00 до 21:30 по Москве. Уже начатую оплату можно проверить или отменить.</p>
     <p id="pendingNotice" hidden style="padding:14px;background:#fff3cd;border-radius:14px;line-height:1.4;">Подтверждение отправки пока не получено. Состав сохранён; нажмите «Проверить отправку заказа» ниже. Пока доставка не подтверждена, не оформляйте такой же заказ заново.</p>
 
     
@@ -4105,6 +4113,37 @@ const modal = document.getElementById('modal');
 const modalTitle = document.getElementById('modalTitle');
 const modalAdd = document.getElementById('modalAdd');
 const checkoutButton = document.getElementById('checkoutButton');
+// A server clock sample is carried by existing API responses: no extra polling.
+let hoursClock=null,lastHoursSample=0,lastBusinessOpen=null;
+const HOURS_MESSAGE='Сейчас нерабочее время. Заказы и оплата доступны ежедневно с 10:00 до 21:30 по Москве.';
+function hoursNow(){return hoursClock?hoursClock.server+performance.now()-hoursClock.monotonic:Date.now();}
+function businessOpen(){const now=hoursNow(),minute=((now+3*3600000)%86400000)/60000;return minute>=600&&minute<1290;}
+function observeBusinessHours(data){
+ const value=data?.business_hours?.server_now;
+ if(Number.isFinite(value)&&value>=lastHoursSample){lastHoursSample=value;hoursClock={server:value,monotonic:performance.now()};renderBusinessHours();}
+}
+function renderBusinessHours(){
+ const open=businessOpen(),now=hoursNow();
+ document.getElementById('closedHours').hidden=open;
+ document.getElementById('products').hidden=!open;
+ document.querySelector('#menuView .menu-footnote').hidden=!open;
+ document.querySelector('#menuView h1').textContent=open?'Что выберешь сегодня?':'Бар сейчас закрыт';
+ document.getElementById('nextOpening').textContent=((now+3*3600000)%86400000)<10*3600000?'Откроемся сегодня в 10:00':'Откроемся завтра в 10:00';
+ document.getElementById('closedCartNotice').hidden=open;
+ if(!open){checkoutLink.hidden=true;if(modal.style.display==='flex')closeModal();}
+ if(lastBusinessOpen!==open){lastBusinessOpen=open;lockCart();if(selectedProduct)calculatePrice();}
+}
+const hoursStyle=document.createElement('style');hoursStyle.textContent=`
+.closed-hours{margin:26px 0 16px;padding:30px 22px;background:#f3f8ea;border:1px solid #e5edd9;border-radius:26px;text-align:center}
+.closed-hours-icon{display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:#e2f4c7;color:#527722;margin:0 auto 20px}.closed-hours-icon svg{width:29px;height:29px}
+.closed-hours-eyebrow{font-size:13px;color:#6c7b5a;margin:0 0 10px}.closed-hours-time{font-size:34px;line-height:1.15;letter-spacing:-1px;font-weight:750;margin:0;color:var(--ink)}
+.closed-hours-zone{font-size:12px;color:#7b8373;margin:8px 0 24px}.closed-hours-next{font-size:16px;font-weight:650;margin:0 0 10px}.closed-hours-caption{font-size:13px;line-height:1.6;color:#7b8373;max-width:300px;margin:0 auto}
+.closed-cart-notice{padding:16px;background:#f3f8ea;border-radius:16px;font-size:13px;line-height:1.6}
+`;document.head.append(hoursStyle);
+setTimeout(renderBusinessHours,0);
+setInterval(()=>{if(!document.hidden)renderBusinessHours();},1000);
+window.addEventListener('focus',renderBusinessHours);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)renderBusinessHours();});
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const totalOf = items => items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 const selectedVariant = () => selectedProduct?.variants?.find(v => v.id === document.querySelector('input[name="volume"]:checked')?.value);
@@ -4119,12 +4158,12 @@ const orderCommentInput=document.getElementById('orderComment');
 
 function lockCart() {
   const locked = !!pendingOrder || orderIsSending || checkoutPreparing || cancelInProgress;
-  document.querySelectorAll('.qty-button, .cart-remove, input[name="pickup"], .add-button, #modalAdd').forEach(el => { el.disabled = locked || el.dataset.unavailable === "true"; });
+  document.querySelectorAll('.qty-button, .cart-remove, input[name="pickup"], .add-button, #modalAdd').forEach(el => { el.disabled = locked || el.dataset.unavailable === "true" || (!businessOpen()&&el.matches(".add-button,#modalAdd")); });
   if(locked)closeCartSwipes();
   orderCommentInput.readOnly = locked;
   renderPaymentChoices(locked);
-  checkoutButton.disabled = orderIsSending || checkoutPreparing || cancelInProgress || (!pendingOrder && !catalog);
-  checkoutButton.textContent = orderIsSending ? 'Проверяем…' : !receiptField.hidden ? 'Перейти к оплате' : pendingOrder ? 'Продолжить / проверить оплату' : cartItems.length&&cartPayable()===0?'Оформить бесплатно':'Оплатить заказ';
+  checkoutButton.disabled = orderIsSending || checkoutPreparing || cancelInProgress || (!pendingOrder && (!catalog || !businessOpen()));
+  checkoutButton.textContent = orderIsSending ? 'Проверяем…' : !businessOpen() ? (pendingOrder?'Проверить оплату':'Откроемся в 10:00') : !receiptField.hidden ? 'Перейти к оплате' : pendingOrder ? 'Продолжить / проверить оплату' : cartItems.length&&cartPayable()===0?'Оформить бесплатно':'Оплатить заказ';
   document.getElementById('pendingNotice').hidden = !pendingOrder;
   cancelPaymentButton.hidden = !pendingOrder;
   cancelPaymentButton.disabled = cancelInProgress || checkoutPreparing || (orderIsSending && !returnCheckRunning);
@@ -4355,6 +4394,7 @@ document.getElementById('proteinNext').onclick=()=>{if(pendingOrder||!proteinTyp
 document.getElementById('proteinBack').onclick=()=>{proteinStep=Math.max(0,proteinStep-1);renderProteinStep();};
 
 function openProduct(index) {
+  if(!businessOpen()){renderBusinessHours();return;}
   if (pendingOrder || orderIsSending || !catalog) return;
   selectedProduct = products[index];
   if(selectedProduct.available===false)return;
@@ -4399,7 +4439,7 @@ function calculatePrice() {
   const needsFlavor=!!picker&&protein.checked&&!document.querySelector('input[name="proteinFlavor"]:checked');
   const unavailableFlavor=picker&&protein.checked&&catalog.products.find(p=>p.variant_kind==='flavor').variants.find(v=>v.id===document.querySelector('input[name="proteinFlavor"]:checked')?.value)?.available===false;
   currentPrice = (selectedVariant()?.price ?? selectedProteinType()?.price ?? selectedProduct.price) + (milk?.price || 0) + catalog.supplements.filter(s => selected.includes(s.id)).reduce((sum, s) => sum + s.price, 0);
-  modalAdd.disabled = needsFlavor || unavailableFlavor || !milk || milk.available===false || !!pendingOrder || (selectedProduct.variants && (!selectedVariant()||selectedVariant().available===false));
+  modalAdd.disabled = !businessOpen() || needsFlavor || unavailableFlavor || !milk || milk.available===false || !!pendingOrder || (selectedProduct.variants && (!selectedVariant()||selectedVariant().available===false));
   document.getElementById('proteinNext').disabled = proteinStep===0 ? !proteinTypeAvailable(proteinType) : !selectedVariant()||selectedVariant().available===false;
   document.getElementById('proteinTotal').textContent = `${singlePrice(currentPrice)} ₽`;
   if(selectedProduct.variant_kind==='flavor')document.getElementById('modalInfo').textContent=`${selectedProduct.volume} · от ${singlePrice(selectedProteinType()?.price??selectedProduct.price)} ₽`;
@@ -4407,7 +4447,7 @@ function calculatePrice() {
   modalAdd.textContent = `Добавить в корзину · ${singlePrice(currentPrice)+" ₽"}`;
 }
 modalAdd.onclick = () => {
-  if (pendingOrder || orderIsSending || !selectedProduct) return;
+  if (!businessOpen() || pendingOrder || orderIsSending || !selectedProduct) return;
   if (cartItems.length >= 15 || cartItems.reduce((sum, item) => sum + item.quantity, 0) >= 20) return alert('За один заказ: до 15 позиций и до 20 напитков.');
   const milk = catalog.milk.find(m => m.id === document.querySelector('input[name="milk"]:checked')?.value);
   if (!milk || milk.available===false || selectedProduct.available===false || (selectedProduct.variants && (!selectedVariant()||selectedVariant().available===false)) || (selectedProduct.variant_kind === 'flavor' && proteinStep !== 3)) return;
@@ -4494,6 +4534,7 @@ receiptField.innerHTML='<label for="receiptEmail">Почта для чека</la
 checkoutButton.before(receiptField);
 const checkoutLink=document.createElement('a');
 checkoutLink.textContent='Открыть страницу оплаты';
+checkoutLink.onclick=event=>{if(!businessOpen()){event.preventDefault();renderBusinessHours();orderNotice(HOURS_MESSAGE);}};
 checkoutLink.target='_blank';checkoutLink.rel='noopener noreferrer';checkoutLink.hidden=true;
 checkoutLink.style.cssText='display:block;text-align:center;margin:16px 0;color:#496c19';
 checkoutButton.after(checkoutLink);
@@ -4645,13 +4686,15 @@ cartItems=[];orderCommentInput.value='';historyHasSnapshot=false;firstEligible=f
   }else if(result.payment_status==='paid'){
     orderNotice((result.free?'Бесплатный заказ принят. ':'Оплата получена. ')+'Передача заказа сотрудникам пока не подтверждена. Не оплачивайте повторно: нажмите «Продолжить / проверить оплату» или обратитесь к сотруднику.');
   }else if(['superseded','refunding','refunded','refund_attention'].includes(result.payment_status)){
+    if(result.cancellation_reason==='outside_hours')alert(result.payment_status==='refunded'?'Оплата поступила после окончания времени приёма заказов. Заказ не отправлен, возврат оформлен. Срок зачисления зависит от банка.':'Оплата поступила после окончания времени приёма заказов. Заказ не отправлен. Проверяем автоматический возврат; повторно не оплачивайте.');
     if(result.payment_status!=='refunded')saveDetached(result.order_id,result.payment_status);
     clearPending();firstEligible=false;void loadFirstDrink();orderNotice('Прежний заказ отменён. Можно выбрать напиток заново.');
     showDetachedConfirmation();
   }else if(result.payment_status==='awaiting'){
+    if(result.checkout_unavailable)checkoutLink.hidden=true;
     orderNotice(result.error||'Оплата ещё не завершена. Нажмите «Продолжить / проверить оплату», чтобы вернуться к тому же счёту.');
   }else if(result.payment_status==='checking'){
-    orderNotice('Ожидаем подтверждение платежа. Не оплачивайте повторно. Если банк отклонил платёж или деньги списаны, а статус не меняется — обратитесь к сотруднику для проверки.');
+    orderNotice(result.error||'Ожидаем подтверждение платежа. Не оплачивайте повторно. Если банк отклонил платёж или деньги списаны, а статус не меняется — обратитесь к сотруднику для проверки.');
   }else if(result.payment_status==='canceled'){
     const usedSaved=!!pendingOrder.saved_card_id;
     clearPending();if(usedSaved){paymentChoice='other';paymentChoiceTouched=true;}void loadFirstDrink();
@@ -4676,6 +4719,7 @@ async function checkPayment(stopForCancel=false){
   return result;
 }
 async function openPayment(url){
+  if(!businessOpen()){renderBusinessHours();orderNotice(HOURS_MESSAGE);return;}
   const u=new URL(url);
   if(u.protocol!=='https:'||u.hostname!=='yoomoney.ru'||u.username||u.password||u.port)throw new Error('Некорректная ссылка оплаты');
   checkoutLink.href=url;checkoutLink.hidden=false;
@@ -4697,6 +4741,12 @@ async function submitOrder(){
   checkoutPreparing=true;lockCart();
   try{
   if(!tg?.initData)return alert('Откройте меню через бота FitMe в Telegram.');
+  if(!businessOpen()){
+    renderBusinessHours();
+    if(pendingOrder){try{await checkPayment();}catch{orderNotice('Не удалось проверить оплату. Повторите проверку позже.');}}
+    else orderNotice(HOURS_MESSAGE);
+    return;
+  }
   if(!pendingOrder){
     await loadFirstDrink();if(!firstLoaded)return alert("Не удалось проверить скидку. Попробуйте ещё раз.");
     if(!catalog)return;
@@ -4729,6 +4779,8 @@ async function submitOrder(){
     if(response.ok && data.payment_status==='awaiting' && data.checkout_url){
       orderNotice('Откроется ЮKassa. Выберите удобный способ оплаты, затем вернитесь в бот. Заказ поступит сотрудникам только после оплаты.');
       await openPayment(data.checkout_url);
+    }else if(data.code==='BAR_CLOSED'){
+      renderBusinessHours();orderNotice(data.error||HOURS_MESSAGE);
     }else if(['PROMO_CHANGED','DISCOUNT_CHANGED'].includes(data.code)){
       clearPending();firstLoaded=false;await loadFirstDrink();alert(data.error);
     }else if(data.code==='EMAIL_REQUIRED'){
@@ -4766,6 +4818,7 @@ async function readApiJson(url, options, timeoutMs) {
       const data = await response.json();
       return {response, data};
     })()]);
+    observeBusinessHours(result.data);
     connectionStatus.observe(url,result.response,result.data,connectionTicket,connectionStartedAt);
     return result;
   } catch(error){connectionStatus.fail('network',connectionTicket);throw error;}
