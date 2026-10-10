@@ -4114,10 +4114,10 @@ const modalTitle = document.getElementById('modalTitle');
 const modalAdd = document.getElementById('modalAdd');
 const checkoutButton = document.getElementById('checkoutButton');
 // A server clock sample is carried by existing API responses: no extra polling.
-let hoursClock=null,lastHoursSample=0,lastBusinessOpen=null;
+let hoursClock=null,lastHoursSample=0,lastBusinessOpen=null,businessHoursExempt=false;
 const HOURS_MESSAGE='Сейчас нерабочее время. Заказы и оплата доступны ежедневно с 10:00 до 21:30 по Москве.';
 function hoursNow(){return hoursClock?hoursClock.server+performance.now()-hoursClock.monotonic:Date.now();}
-function businessOpen(){const now=hoursNow(),minute=((now+3*3600000)%86400000)/60000;return minute>=600&&minute<1290;}
+function businessOpen(){if(businessHoursExempt)return true;const now=hoursNow(),minute=((now+3*3600000)%86400000)/60000;return minute>=600&&minute<1290;}
 function observeBusinessHours(data){
  const value=data?.business_hours?.server_now;
  if(Number.isFinite(value)&&value>=lastHoursSample){lastHoursSample=value;hoursClock={server:value,monotonic:performance.now()};renderBusinessHours();}
@@ -5325,6 +5325,7 @@ function mountStatistics(){
    if(!tg?.initData)return;
    const {response,data}=await readApiJson(API+'customers/visit',{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},6000);
    done=response.ok&&data.ok===true;
+   if(done){businessHoursExempt=data.business_hours_exempt===true;renderBusinessHours();}
   }catch{}finally{
    busy=false;
    if(!done&&attempts<=retryDelays.length)timer=setTimeout(()=>void visit(),retryDelays[attempts-1]);
