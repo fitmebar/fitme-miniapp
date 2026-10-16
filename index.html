@@ -4053,11 +4053,11 @@ document.addEventListener('click',event=>{if(!promoBadge.contains(event.target)&
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!promoDetails.hidden){event.preventDefault();closePromoDetails(true);}});
 document.addEventListener('focusin',event=>{if(!promoBadge.contains(event.target)&&!promoDetails.contains(event.target))closePromoDetails();});
 function renderPromotionBadge(){
- const available=firstLoaded&&(firstEligible||personalDiscounts.length>0);
+ const available=firstLoaded&&personalDiscounts.length>0;
  promoBadge.hidden=!available;
  if(!available){closePromoDetails();return;}
  const discount=[...personalDiscounts].sort((a,b)=>b.percent-a.percent||Number(b.scope==='order')-Number(a.scope==='order'))[0];
- let label='Первый напиток',value='1 ₽',description='Первый напиток за 1 ₽';
+ let label='Скидка',value='',description='Личная скидка';
  const details=[];
  if(discount){
   const scope=discount.scope==='drink'?'один напиток':'весь заказ';
@@ -4069,8 +4069,7 @@ function renderPromotionBadge(){
    details.push(`Скидка ${d.percent}%`+'. '+text);
   }
  }
- if(firstEligible)details.push('Первый напиток за 1 ₽: любой объём, молоко и добавки включены. Скидку получит один самый дорогой напиток; остальные — по прайсу.');
- if(discount)details.push('Молоко и добавки включены. В корзине автоматически выберем самый выгодный вариант. Скидки и акции не складываются.');
+ if(discount)details.push('Молоко и добавки включены. В корзине автоматически выберем самый выгодный вариант. Скидки не складываются.');
  promoBadge.querySelector('.promo-badge-label').textContent=label;
  promoBadge.querySelector('.promo-badge-value').textContent=value;
  promoBadge.querySelector('.promo-badge-value').toggleAttribute('data-free',discount?.percent===100);
@@ -4085,7 +4084,7 @@ function discountChoice(items=cartItems){
   if(pendingOrder.discount_id)return {id:pendingOrder.discount_id,total:pendingOrder.discount_total,percent:pendingOrder.discount_percent};
   return {first:pendingOrder.first_drink===true,total:(full-(pendingOrder.first_drink&&max?Math.round((max-1)*100):0))/100};
  }
- let best={first:firstEligible&&max>0,total:(full-(firstEligible&&max?Math.round((max-1)*100):0))/100};
+ let best={first:false,total:full/100};
  for(const d of personalDiscounts){
   const cents=d.scope==='drink'?full-Math.round(max*100)+Math.round(max*(100-d.percent)):items.reduce((n,x)=>n+Math.round(x.price*(100-d.percent))*x.quantity,0);
   if(cents<Math.round(best.total*100))best={...d,total:cents/100,first:false};
@@ -4101,7 +4100,7 @@ async function loadFirstDrink(){
  try{
   const {response,data}=await readApiJson(API+'promotions/first-drink',{method:'POST',headers:authHeaders(),body:'{}',cache:'no-store'},8000);
   if(!response.ok||typeof data.eligible!=='boolean')throw new Error();
-  firstEligible=data.eligible;personalDiscounts=Array.isArray(data.personal)?data.personal:[];firstLoaded=true;renderPromotionBadge();
+  firstEligible=false;personalDiscounts=Array.isArray(data.personal)?data.personal:[];firstLoaded=true;renderPromotionBadge();
   if(catalog){const pickup=document.querySelector('input[name="pickup"]:checked')?.value;renderCatalog(catalog);document.querySelectorAll('input[name="pickup"]').forEach(el=>el.checked=el.value===pickup);}
   updateCart();renderCart();if(selectedProduct)calculatePrice();
  }catch{firstLoaded=false;renderPromotionBadge();}finally{firstDrinkLoading--;}
@@ -4765,7 +4764,7 @@ async function submitOrder(){
     if(!confirm(payable===0?`Оформить бесплатный заказ?\n\n${pickup}\nЗаказ сразу поступит бармену.`:`Оплатить заказ на ${payable} ₽${chosenCard?' с карты ••'+chosenCard.last4:''}?\n\n${pickup}\nНачнём приготовление после подтверждения оплаты.`))return;
     const chosenDiscount=discountChoice();
     const order={order_id:crypto.randomUUID(),catalog_version:catalog.version,...cardOptions,
-      items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,...(i.protein_flavor_id?{protein_flavor_id:i.protein_flavor_id}:{}),milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup,comment:orderCommentInput.value.trim(),...(chosenDiscount.id?{discount_id:chosenDiscount.id,discount_total:chosenDiscount.total,discount_percent:chosenDiscount.percent}:chosenDiscount.first?{first_drink:true}:{})};
+      items:cartItems.map(i=>({product_id:i.product_id,variant_id:i.variant_id,...(i.protein_flavor_id?{protein_flavor_id:i.protein_flavor_id}:{}),milk_id:i.milk_id,supplement_ids:[...i.supplement_ids],quantity:i.quantity,price:i.price})),total,pickup,comment:orderCommentInput.value.trim(),...(chosenDiscount.id?{discount_id:chosenDiscount.id,discount_total:chosenDiscount.total,discount_percent:chosenDiscount.percent}:{})};
     try{persistPending(order);}catch{return alert('Не удалось сохранить заказ. Оплата не открывалась.');}
   }
   const emailInput=document.getElementById('receiptEmail');
@@ -5228,7 +5227,7 @@ function mountStatistics(){
    <fieldset><legend>Размер скидки</legend><div class="dp-options" id="dpPercents">${[10,20,50,100].map(n=>`<button type="button" data-percent="${n}" aria-pressed="${n===20}">${n}%</button>`).join('')}</div><label for="dpPercent" class="dp-hint">Или свой процент</label><div class="dp-number"><input id="dpPercent" type="number" inputmode="numeric" min="1" max="100" step="1" value="20" required><span>%</span></div></fieldset>
    <fieldset><legend>На что действует</legend><div class="dp-options" id="dpScopes"><button type="button" data-scope="drink" aria-pressed="true">Один напиток</button><button type="button" data-scope="order" aria-pressed="false">Весь заказ</button></div><p id="dpScopeHint" class="dp-hint">Самый дорогой напиток в заказе, включая молоко и добавки.</p></fieldset>
    <fieldset><legend>Сколько раз можно использовать</legend><div class="dp-options" id="dpUsesOptions"><button type="button" data-uses="1" aria-pressed="true">Один раз</button><button type="button" data-uses="5" aria-pressed="false">5 раз</button><button type="button" data-uses="0" aria-pressed="false">До отмены</button></div><div id="dpUsesField"><label for="dpUses" class="dp-hint">Количество заказов</label><div class="dp-number"><input id="dpUses" type="number" inputmode="numeric" min="1" max="1000" step="1" value="1" required></div></div></fieldset>
-   <p class="dp-hint">Скидки не складываются с акцией за 1 ₽. Клиент получит самый выгодный вариант.</p><p id="dpFormError" class="dp-status dp-error" role="alert" hidden></p><button class="dp-primary" id="dpSubmit" type="submit" disabled>Проверить и выдать</button>
+   <p class="dp-hint">Скидка применяется к напиткам, молоку и добавкам.</p><p id="dpFormError" class="dp-status dp-error" role="alert" hidden></p><button class="dp-primary" id="dpSubmit" type="submit" disabled>Проверить и выдать</button>
   </div></form></div>
   <div id="dpList" hidden><div class="dp-row"><h2>Выданные скидки</h2><button type="button" class="dp-link" id="dpRefresh">Обновить</button></div><label class="dp-label" for="dpListSearch">Найти клиента</label><input id="dpListSearch" type="search" autocomplete="off" placeholder="@ник, имя или Telegram ID" maxlength="64"><div class="dp-options" id="dpFilters"><button type="button" data-filter="active" aria-pressed="true">Действующие</button><button type="button" data-filter="all" aria-pressed="false">Все</button></div><p class="dp-hint">Ожидающие оплаты заказы временно занимают применение скидки.</p><p id="dpListStatus" class="dp-status" role="status"></p><div id="dpDiscounts"></div><button type="button" class="dp-secondary" id="dpMore" hidden>Показать ещё</button></div>
   <div id="dpReview" hidden></div>`;
