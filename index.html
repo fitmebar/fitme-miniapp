@@ -3846,6 +3846,7 @@ button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid
 
 <main class="container" id="menuView">
   <section class="intro"><h1>Что выберешь сегодня?</h1><div class="intro-meta"><div class="intro-label">Вкусно. В твоём ритме.</div></div></section>
+  <section id="pausedOrders" class="closed-hours" hidden aria-live="polite"><div class="closed-hours-icon" aria-hidden="true">Ⅱ</div><p class="closed-hours-next">Небольшая пауза</p><p class="closed-hours-caption">Сейчас новые заказы не принимаем. Попробуй немного позже.<br>Уже оплаченный заказ готовим как обычно.</p></section>
   <section id="closedHours" class="closed-hours" hidden aria-live="polite">
     <div class="closed-hours-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg></div>
     <p class="closed-hours-eyebrow">Ждём тебя каждый день</p>
@@ -4113,10 +4114,17 @@ const modalTitle = document.getElementById('modalTitle');
 const modalAdd = document.getElementById('modalAdd');
 const checkoutButton = document.getElementById('checkoutButton');
 // A server clock sample is carried by existing API responses: no extra polling.
-let hoursClock=null,lastHoursSample=0,lastBusinessOpen=null,businessHoursExempt=false;
+let hoursClock=null,lastHoursSample=0,lastBusinessOpen=null,businessHoursExempt=false,lastReceptionPaused=null;
+let ordersReception={paused:false,revision:-1};
+function observeReception(data){
+ const r=data?.reception;
+ if(!r||typeof r.paused!=='boolean'||!Number.isSafeInteger(r.revision)||r.revision<ordersReception.revision)return;
+ ordersReception={paused:r.paused,revision:r.revision};renderBusinessHours();window.dispatchEvent(new Event('fitme-reception'));
+}
+function unavailableOrderMessage(){return ordersReception.paused?'Приём новых заказов временно приостановлен. Уже начатую оплату можно проверить или отменить.':HOURS_MESSAGE;}
 const HOURS_MESSAGE='Сейчас нерабочее время. Заказы и оплата доступны ежедневно с 10:00 до 21:30 по Москве.';
 function hoursNow(){return hoursClock?hoursClock.server+performance.now()-hoursClock.monotonic:Date.now();}
-function businessOpen(){if(businessHoursExempt)return true;const now=hoursNow(),minute=((now+3*3600000)%86400000)/60000;return minute>=600&&minute<1290;}
+function businessOpen(){if(ordersReception.paused)return false;if(businessHoursExempt)return true;const now=hoursNow(),minute=((now+3*3600000)%86400000)/60000;return minute>=600&&minute<1290;}
 function observeBusinessHours(data){
  const value=data?.business_hours?.server_now;
  if(Number.isFinite(value)&&value>=lastHoursSample){lastHoursSample=value;hoursClock={server:value,monotonic:performance.now()};renderBusinessHours();}
@@ -4126,12 +4134,15 @@ function renderBusinessHours(){
  const nextText=((now+3*3600000)%86400000)<10*3600000?'Откроемся сегодня в 10:00':'Откроемся завтра в 10:00';
  const nextOpening=document.getElementById('nextOpening');
  if(nextOpening.textContent!==nextText)nextOpening.textContent=nextText;
- if(lastBusinessOpen===open)return;
- document.getElementById('closedHours').hidden=open;
+ if(lastBusinessOpen===open&&lastReceptionPaused===ordersReception.paused)return;
+ lastReceptionPaused=ordersReception.paused;
+ document.getElementById('closedHours').hidden=open||ordersReception.paused;
+ document.getElementById('pausedOrders').hidden=!ordersReception.paused;
  document.getElementById('products').hidden=!open;
  document.querySelector('#menuView .menu-footnote').hidden=!open;
- document.querySelector('#menuView h1').textContent=open?'Что выберешь сегодня?':'Бар сейчас закрыт';
+ document.querySelector('#menuView h1').textContent=open?'Что выберешь сегодня?':ordersReception.paused?'Скоро вернёмся':'Бар сейчас закрыт';
  document.getElementById('closedCartNotice').hidden=open;
+ document.getElementById('closedCartNotice').textContent=unavailableOrderMessage();
  if(!open){checkoutLink.hidden=true;if(modal.style.display==='flex')closeModal();}
  if(lastBusinessOpen!==open){lastBusinessOpen=open;lockCart();if(selectedProduct)calculatePrice();}
 }
@@ -4165,7 +4176,7 @@ function lockCart() {
   orderCommentInput.readOnly = locked;
   renderPaymentChoices(locked);
   checkoutButton.disabled = orderIsSending || checkoutPreparing || cancelInProgress || (!pendingOrder && (!catalog || !businessOpen()));
-  checkoutButton.textContent = orderIsSending ? 'Проверяем…' : !businessOpen() ? (pendingOrder?'Проверить оплату':'Откроемся в 10:00') : !receiptField.hidden ? 'Перейти к оплате' : pendingOrder ? 'Продолжить / проверить оплату' : cartItems.length&&cartPayable()===0?'Оформить бесплатно':'Оплатить заказ';
+  checkoutButton.textContent = orderIsSending ? 'Проверяем…' : !businessOpen() ? (pendingOrder?'Проверить оплату':ordersReception.paused?'Приём заказов на паузе':'Откроемся в 10:00') : !receiptField.hidden ? 'Перейти к оплате' : pendingOrder ? 'Продолжить / проверить оплату' : cartItems.length&&cartPayable()===0?'Оформить бесплатно':'Оплатить заказ';
   document.getElementById('pendingNotice').hidden = !pendingOrder;
   cancelPaymentButton.hidden = !pendingOrder;
   cancelPaymentButton.disabled = cancelInProgress || checkoutPreparing || (orderIsSending && !returnCheckRunning);
@@ -4537,7 +4548,7 @@ receiptField.innerHTML='<label for="receiptEmail">Почта для чека</la
 checkoutButton.before(receiptField);
 const checkoutLink=document.createElement('a');
 checkoutLink.textContent='Открыть страницу оплаты';
-checkoutLink.onclick=event=>{if(!businessOpen()){event.preventDefault();renderBusinessHours();orderNotice(HOURS_MESSAGE);}};
+checkoutLink.onclick=event=>{if(!businessOpen()){event.preventDefault();renderBusinessHours();orderNotice(unavailableOrderMessage());}};
 checkoutLink.target='_blank';checkoutLink.rel='noopener noreferrer';checkoutLink.hidden=true;
 checkoutLink.style.cssText='display:block;text-align:center;margin:16px 0;color:#496c19';
 checkoutButton.after(checkoutLink);
@@ -4722,7 +4733,7 @@ async function checkPayment(stopForCancel=false){
   return result;
 }
 async function openPayment(url){
-  if(!businessOpen()){renderBusinessHours();orderNotice(HOURS_MESSAGE);return;}
+  if(!businessOpen()){renderBusinessHours();orderNotice(unavailableOrderMessage());return;}
   const u=new URL(url);
   if(u.protocol!=='https:'||u.hostname!=='yoomoney.ru'||u.username||u.password||u.port)throw new Error('Некорректная ссылка оплаты');
   checkoutLink.href=url;checkoutLink.hidden=false;
@@ -4747,7 +4758,7 @@ async function submitOrder(){
   if(!businessOpen()){
     renderBusinessHours();
     if(pendingOrder){try{await checkPayment();}catch{orderNotice('Не удалось проверить оплату. Повторите проверку позже.');}}
-    else orderNotice(HOURS_MESSAGE);
+    else orderNotice(unavailableOrderMessage());
     return;
   }
   if(!pendingOrder){
@@ -4782,7 +4793,7 @@ async function submitOrder(){
     if(response.ok && data.payment_status==='awaiting' && data.checkout_url){
       orderNotice('Откроется ЮKassa. Выберите удобный способ оплаты, затем вернитесь в бот. Заказ поступит сотрудникам только после оплаты.');
       await openPayment(data.checkout_url);
-    }else if(data.code==='BAR_CLOSED'){
+    }else if(data.code==='BAR_CLOSED'||data.code==='ORDERS_PAUSED'){
       renderBusinessHours();orderNotice(data.error||HOURS_MESSAGE);
     }else if(['PROMO_CHANGED','DISCOUNT_CHANGED'].includes(data.code)){
       clearPending();firstLoaded=false;await loadFirstDrink();alert(data.error);
@@ -4821,6 +4832,7 @@ async function readApiJson(url, options, timeoutMs) {
       const data = await response.json();
       return {response, data};
     })()]);
+    observeReception(result.data);
     observeBusinessHours(result.data);
     connectionStatus.observe(url,result.response,result.data,connectionTicket,connectionStartedAt);
     return result;
@@ -5101,6 +5113,7 @@ function mountStatistics(){
  `;document.head.append(style);
  const panel=document.getElementById('statisticsPanel');panel.classList.remove('owner-access-pending');panel.removeAttribute('aria-busy');
  panel.innerHTML=`<div class="st-header"><div><div class="intro-label">Только для владельцев</div><h1>Статистика</h1></div><button type="button" class="st-refresh" id="stRefresh" aria-label="Обновить статистику">↻</button></div><p class="st-muted">Заказы мини-приложения · время по Москве</p>
+ <section class="st-card st-reception" aria-labelledby="stReceptionTitle"><div class="st-row"><span><strong id="stReceptionTitle">Приём заказов</strong><small id="stReceptionState" role="status">Проверяем состояние…</small></span><span id="stReceptionDot" aria-hidden="true" style="width:10px;height:10px;border-radius:50%;background:#b6bcb0;flex:0 0 10px"></span></div><button type="button" class="st-secondary" id="stReceptionToggle" disabled style="width:100%;margin-top:14px">Подождите…</button><p class="st-muted" style="margin:12px 0 0">Пауза действует для всех. Новые заказы недоступны; ранее открытые счета ещё можно оплатить, и такие заказы поступят бармену. Возобновление сохраняет обычные часы работы.</p><p id="stReceptionError" class="st-status" role="alert" hidden></p></section>
  <div class="st-presets" id="stPresets"><button data-period="today" aria-pressed="true">Сегодня</button><button data-period="yesterday" aria-pressed="false">Вчера</button><button data-period="week" aria-pressed="false">7 дней</button><button data-period="month" aria-pressed="false">Месяц</button></div>
  <form class="st-dates" id="stDates"><label>С<input id="stFrom" type="date" required></label><label>По<input id="stTo" type="date" required></label><button class="st-go" type="submit" aria-label="Показать выбранный период">→</button></form>
  <div class="st-tabs" id="stTabs"><button data-mode="overview" aria-pressed="true">Обзор</button><button data-mode="orders" aria-pressed="false">Заказы</button><button data-mode="customers" aria-pressed="false">Клиенты</button></div>
@@ -5117,6 +5130,35 @@ function mountStatistics(){
  let mode='overview',period={from:today(),to:today()},generation=0,cursor=null,customerOffset=null,customerTimer,selected=null,orders=[],customers=[],leaders=[],loadingMore=false,paymentRefresh=false;
  let displayedStatisticsKey=null;const cache=new Map();$('stFrom').value=period.from;$('stTo').value=period.to;
  async function api(action,body={}){const {response,data}=await readApiJson(API+'admin/stats/'+action,{method:'POST',headers:authHeaders(),body:JSON.stringify({...period,...body}),cache:'no-store'},15000);if(!response.ok||!data.ok)throw new Error(data.error||'Не удалось загрузить статистику. Повторите попытку.');return data;}
+ let receptionBusy=false,receptionVerified=false;
+ function renderReceptionControl(){
+  const r=ordersReception,button=$('stReceptionToggle');
+  button.disabled=receptionBusy||!receptionVerified;
+  button.textContent=receptionBusy?'Сохраняем…':!receptionVerified?'Проверить состояние':r.paused?'Возобновить приём заказов':'Приостановить приём заказов';
+  $('stReceptionState').textContent=!receptionVerified?'Состояние не подтверждено':r.paused?'На паузе':'Приём включён';
+  $('stReceptionDot').style.background=!receptionVerified?'#b6bcb0':r.paused?'#e4a444':'#8de000';
+  button.style.background=r.paused?'var(--lime)':'#fff';
+ }
+ async function receptionApi(body={}){
+  const {response,data}=await readApiJson(API+'admin/reception',{method:'POST',headers:authHeaders(),body:JSON.stringify(body),cache:'no-store'},10000);
+  if(!response.ok||!data.ok)throw Error(data.error||'Не удалось проверить приём заказов. Обновите страницу статистики.');
+  receptionVerified=true;return data;
+ }
+ async function loadReception(){
+  if(receptionBusy)return;
+  try{await receptionApi();$('stReceptionError').hidden=true;}catch(e){receptionVerified=false;$('stReceptionError').hidden=false;$('stReceptionError').textContent=e.message;}finally{renderReceptionControl();}
+ }
+ window.addEventListener('fitme-reception',renderReceptionControl);
+ $('stReceptionToggle').onclick=async()=>{
+  if(receptionBusy||!receptionVerified)return;
+  const paused=!ordersReception.paused,revision=ordersReception.revision;
+  if(!window.confirm(paused?'Приостановить новые заказы? Ранее открытые счета ещё можно оплатить.':'Возобновить приём заказов?'))return;
+  receptionBusy=true;renderReceptionControl();$('stReceptionError').hidden=true;
+  try{await receptionApi({paused,revision});}catch(e){receptionVerified=false;$('stReceptionError').hidden=false;$('stReceptionError').textContent=e.message;}
+  finally{receptionBusy=false;renderReceptionControl();if(!receptionVerified)await loadReception();}
+ };
+ window.addEventListener('focus',()=>{if(!panel.hidden)void loadReception();});
+ void loadReception();
  function status(text='',error=false){$('stStatus').textContent=text;$('stStatus').classList.toggle('st-error',error);$('stRetry').hidden=!error;}
  function person(c,attr,index,rank=false){return `<button type="button" class="st-person" ${attr}="${index}">${rank?`<span class="st-rank">${index+1}</span>`:''}<span class="st-person-main"><strong>${esc(c.name||'Клиент '+c.user_id)}</strong><small>${esc(c.username?'@'+c.username:'ID '+c.user_id)}</small></span>${rank?`<span class="st-person-total">${c.orders}<small>${rub(c.revenue)}</small></span>`:'<span aria-hidden="true">›</span>'}</button>`;}
  function renderSummary(data){const s=data.summary;leaders=data.leaders||[];const max=Math.max(0,...data.hours.map(x=>x.orders));const peaks=data.hours.filter(x=>x.orders===max&&max>0);const countLabel=s.orders===0?'Заказов пока нет':`Пик: ${peaks.slice(0,3).map(x=>String(x.hour).padStart(2,'0')+':00').join(', ')}${peaks.length>3?' и ещё '+(peaks.length-3):''} · ${max} заказов за час`;
@@ -5138,7 +5180,7 @@ function mountStatistics(){
  function select(c){selected=c;$('stSelected').hidden=false;$('stSelected').innerHTML=`<strong>${esc(c.name||'Клиент '+c.user_id)}</strong><br>${esc(c.username?'@'+c.username:'ID '+c.user_id)}<br><button type="button" id="stClearClient">Показать всех клиентов</button>`;$('stAllLabel').hidden=false;$('stAll').checked=true;$('stClearClient').onclick=()=>{selected=null;$('stSelected').hidden=true;$('stAllLabel').hidden=true;void loadOrders();};setMode('orders');}
  function applyDates(){const from=$('stFrom').value,to=$('stTo').value,diff=Date.parse(to)-Date.parse(from);if(!from||!to||!Number.isFinite(diff)||diff<0||diff>=366*86400000){status('Выберите корректный период до 366 дней.',true);return;}period={from,to};if(selected)$('stAll').checked=false;load();}
  async function refreshPayments(){if(paymentRefresh)return;paymentRefresh=true;$('stPayments').disabled=true;const fixed={...period},report=t=>{if($('stPaymentStatus'))$('stPaymentStatus').textContent=t;};let next=null,updated=0,failed=0,finished=false;try{for(let page=0;page<20;page++){if(panel.hidden||mode!=='overview'||JSON.stringify(period)!==JSON.stringify(fixed))break;report('Уточняем данные оплаты… '+updated);const d=await api('refresh-payments',{...fixed,cursor:next});updated+=d.updated;failed+=d.failed;next=d.next_cursor;if(!next){finished=true;break;}}cache.clear();if(!panel.hidden&&mode==='overview'&&JSON.stringify(period)===JSON.stringify(fixed)){await loadOverview(true);report(failed?`Обновлено: ${updated}. Не удалось уточнить: ${failed}. Можно повторить позже.`:finished?'Данные ЮKassa обновлены.':'Часть данных обновлена. Нажми ещё раз, чтобы продолжить.');}}catch(e){report('Не удалось уточнить данные. '+e.message);}finally{paymentRefresh=false;if($('stPayments'))$('stPayments').disabled=false;}}
- tab.onclick=()=>{showView('statistics');load();};$('stRefresh').onclick=()=>load(true);$('stRetry').onclick=()=>load(true);
+ tab.onclick=()=>{showView('statistics');void loadReception();load();};$('stRefresh').onclick=()=>{void loadReception();load(true);};$('stRetry').onclick=()=>{void loadReception();load(true);};
  $('stTabs').onclick=e=>{const b=e.target.closest('[data-mode]');if(b)setMode(b.dataset.mode);};
  $('stPresets').onclick=e=>{const b=e.target.closest('[data-period]');if(!b)return;const t=today(),kind=b.dataset.period;$('stFrom').value=kind==='yesterday'?shift(t,-1):kind==='week'?shift(t,-6):kind==='month'?t.slice(0,8)+'01':t;$('stTo').value=kind==='yesterday'?shift(t,-1):t;$('stPresets').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));applyDates();};
  $('stDates').onsubmit=e=>{e.preventDefault();$('stPresets').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed','false'));applyDates();};
